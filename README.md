@@ -9,7 +9,7 @@ The env manager v2 can be installed with Brew using the following command:
 
 ```bash
 brew tap stanyzra/homebrew-env-manager-v2
-brew install env-manager-v2
+brew install stanyzra/env-manager-v2/homebrew-env-manager-v2
 ```
 
 ## Configuring
