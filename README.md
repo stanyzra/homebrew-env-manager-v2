@@ -8,8 +8,8 @@ A environment variable manager for AWS Amplify, DGO Apps and OCI Object Storage,
 The env manager v2 can be installed with Brew using the following command:
 
 ```bash
-$ brew tap stanyzra/homebrew-env-manager-v2
-$ brew install env-manager-v2
+brew tap stanyzra/homebrew-env-manager-v2
+brew install env-manager-v2
 ```
 
 ## Configuring
@@ -19,5 +19,5 @@ To actual use the env manager v2, you must configure your AWS, DGO and OCI crede
 To configure, run the following command:
 
 ```bash
-$ env-manager-v2 configure
+env-manager-v2 configure
 ```

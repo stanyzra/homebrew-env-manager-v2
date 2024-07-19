@@ -9,6 +9,15 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var validTypes = []string{"envs", "secrets"}
+var validProjects = []string{"collection-back-end-v2.1", "gollection-elastic"}
+var validEnvs = []string{"prod", "beta", "homolog", "dev"}
+
+const (
+	// Bucket name
+	bucketName = "collection-kubernetes-files"
+)
+
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
 	Use:   "env-manager-v2",

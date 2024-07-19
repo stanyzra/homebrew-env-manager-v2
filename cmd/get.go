@@ -19,16 +19,6 @@ import (
 	"gopkg.in/ini.v1"
 )
 
-// Define the valid options as a slice
-var validTypes = []string{"envs", "secrets"}
-var validProjects = []string{"collection-back-end-v2.1", "gollection-elastic"}
-var validEnvs = []string{"prod", "beta", "homolog", "dev"}
-
-const (
-	// Bucket name
-	bucketName = "collection-kubernetes-files"
-)
-
 var getCmd = &cobra.Command{
 	Use: "get [flags] -p <project-name> -e <project-environment> (<env-name>|--get-all)",
 	Example: `env-manager-v2 get -p collection-back-end-v2.1 -e dev -t secrets -A
@@ -37,7 +27,8 @@ env-manager-v2 get -p collection-back-end-v2.1 -e dev bar moo baz`,
 	Short: "Get a list of environment variables and secrets from OCI Object Storage",
 	Long: `Get a list of environment variables and secrets (only names) from OCI Object
 Storage. Flags can be used to filter the list of environment variables and secrets. The
-project flag is required. You can specify one or more environment variable names in the arguments.`,
+project and environment flag is required. You can specify one or more environment
+variable names in the arguments.`,
 	Args: func(cmd *cobra.Command, args []string) error {
 		isGetAll, err := cmd.Flags().GetBool("get-all")
 		if err != nil {
@@ -107,24 +98,7 @@ project flag is required. You can specify one or more environment variable names
 func GetInputedEnv(client objectstorage.ObjectStorageClient, namespace string, project string, projEnvironment string, envType string, envNames []string) {
 	fileName := fmt.Sprintf("%s_%s", projEnvironment, envType)
 
-	// Get the object
-	getRequest := objectstorage.GetObjectRequest{
-		NamespaceName: &namespace,
-		BucketName:    common.String(bucketName),
-		ObjectName:    common.String(fmt.Sprintf("%s/env-files/.%s", project, fileName)),
-	}
-
-	getResponse, err := client.GetObject(context.Background(), getRequest)
-	helpers.FatalIfError(err)
-
-	// Read the object content
-	content, err := io.ReadAll(getResponse.Content)
-	if err != nil {
-		fmt.Println("Error reading object content: ", err)
-		return
-	}
-
-	envFile, err := ini.Load(content)
+	envFile, err := utils.GetEnvsFileAsIni(project, fileName, client, namespace, bucketName)
 
 	if err != nil {
 		fmt.Println("Error loading file: ", err)
