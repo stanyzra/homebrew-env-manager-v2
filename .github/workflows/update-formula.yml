@@ -25,7 +25,7 @@ jobs:
 
             # Git author info used to commit to the homebrew tap.
             # Defaults are shown - strings
-            commit_owner: stanyzra
+            commit_owner: homebrew-env-manager-v2
             commit_email: stanyhelberth@gmail.com
 
             depends_on: |
