@@ -118,8 +118,7 @@ func SaveEnvFile(client objectstorage.ObjectStorageClient, namespace string, pro
 	saveRequest := objectstorage.PutObjectRequest{
 		NamespaceName: &namespace,
 		BucketName:    common.String(bucketName),
-		// ObjectName:    common.String(fmt.Sprintf("%s/env-files/.%s", project, fileName)),
-		ObjectName:    common.String(fmt.Sprintf("%s/env-files/.%s", project, "teste")),
+		ObjectName:    common.String(fmt.Sprintf("%s/env-files/.%s", project, fileName)),
 		PutObjectBody: io.NopCloser(strings.NewReader(envFileContent)),
 	}
 
