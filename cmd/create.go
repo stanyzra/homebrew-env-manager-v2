@@ -114,6 +114,21 @@ update command to update an existing environment variable or secret.`,
 	},
 }
 
+func CreateEnvironmentVariables(envFile *ini.File, userEnvsFile *ini.File) bool {
+	isSaved := false
+	for _, key := range userEnvsFile.Section("").Keys() {
+		if envFile.Section("").HasKey(key.Name()) {
+			fmt.Printf("[WARNING] Environment variable \"%s\" already exists\n", key.Name())
+			continue
+		}
+
+		isSaved = true
+		envFile.Section("").Key(key.Name()).SetValue(key.Value())
+	}
+
+	return isSaved
+}
+
 func CreateEnvFromFile(client objectstorage.ObjectStorageClient, namespace string, project string, projEnvironment string, envType string, fileName string, filePath string) {
 	userEnvFile, err := ini.Load(filePath)
 	if err != nil {
@@ -128,22 +143,9 @@ func CreateEnvFromFile(client objectstorage.ObjectStorageClient, namespace strin
 		return
 	}
 
-	isSaved := false
-	for _, section := range userEnvFile.Sections() {
-		for _, key := range section.Keys() {
-			if envFile.Section("").HasKey(key.Name()) {
-				fmt.Printf("[WARNING] Environment variable \"%s\" already exists in project \"%s\" in \"%s\" environment\n", key.Name(), project, projEnvironment)
-				continue
-			}
-
-			isSaved = true
-			envFile.Section("").Key(key.Name()).SetValue(key.Value())
-		}
-	}
-
-	if isSaved {
+	if CreateEnvironmentVariables(envFile, userEnvFile) {
 		utils.SaveEnvFile(client, namespace, project, fileName, envFile, bucketName)
-		fmt.Printf("Environment variables from file \"%s\" saved in project \"%s\" in \"%s\" environment\n", filePath, project, projEnvironment)
+		fmt.Printf("Environment variables saved in project \"%s\" in \"%s\" environment\n", project, projEnvironment)
 	}
 }
 
