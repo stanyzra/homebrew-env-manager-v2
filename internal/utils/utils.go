@@ -5,6 +5,7 @@ Copyright © 2024 Stany Helberty stanyhelberth@gmail.com
 package utils
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"fmt"
@@ -126,5 +127,30 @@ func SaveEnvFile(client objectstorage.ObjectStorageClient, namespace string, pro
 	if err != nil {
 		fmt.Println("Error saving file: ", err)
 		return
+	}
+}
+
+// GetUserPermission asks the user for permission to proceed
+func GetUserPermission(message string) bool {
+	reader := bufio.NewReader(os.Stdin)
+
+	for {
+		fmt.Printf("%s (y/n): ", message)
+		response, err := reader.ReadString('\n')
+		if err != nil {
+			fmt.Println("Error reading input, please try again.")
+			continue
+		}
+
+		response = strings.TrimSpace(response)
+
+		switch response {
+		case "y":
+			return true
+		case "n":
+			return false
+		default:
+			fmt.Println("Invalid response. Please type 'y' or 'n'.")
+		}
 	}
 }
