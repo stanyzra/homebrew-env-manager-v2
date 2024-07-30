@@ -11,6 +11,7 @@ import (
 	"log"
 	"strings"
 
+	"github.com/aws/aws-sdk-go-v2/service/amplify"
 	"github.com/oracle/oci-go-sdk/example/helpers"
 	"github.com/oracle/oci-go-sdk/v49/common"
 	"github.com/oracle/oci-go-sdk/v49/objectstorage"
@@ -65,31 +66,42 @@ variable names in the arguments.`,
 			log.Fatalf("Error reading option flag: %v", err)
 		}
 
-		configProvider, configFileName, err := utils.GetConfigProviderOCI()
+		cloudProvider := utils.GetCloudProvider(project, projectProviders)
 
-		if err != nil {
-			fmt.Println("Error getting config provider: ", err)
-			return
-		}
+		if utils.StringInSlice("OCI", cloudProvider) {
+			configProvider, configFileName, err := utils.GetConfigProviderOCI()
+			if err != nil {
+				fmt.Println("Error getting config provider: ", err)
+				return
+			}
 
-		client, err := objectstorage.NewObjectStorageClientWithConfigurationProvider(configProvider)
-		helpers.FatalIfError(err)
+			client, err := objectstorage.NewObjectStorageClientWithConfigurationProvider(configProvider)
+			helpers.FatalIfError(err)
 
-		ini_config, err := ini.Load(configFileName)
-		if err != nil {
-			fmt.Println("Error loading config file: ", err)
-			return
-		}
+			iniConfig, err := ini.Load(configFileName)
+			if err != nil {
+				fmt.Println("Error loading config file: ", err)
+				return
+			}
 
-		sec := ini_config.Section("OCI")
-		namespace := sec.Key("namespace").String()
+			sec := iniConfig.Section("OCI")
+			namespace := sec.Key("namespace").String()
 
-		if isGetAll {
-			ReadFullObject(client, namespace, project, projEnvironment, envType)
-			return
-		} else {
-			envNames := args
-			GetInputedEnv(client, namespace, project, projEnvironment, envType, envNames)
+			HandleOCI(client, namespace, project, projEnvironment, envType, isGetAll, args)
+
+		} else if utils.StringInSlice("DGO", cloudProvider) && projEnvironment == "prod" {
+			fmt.Println("DGO")
+
+		} else if utils.StringInSlice("AWS", cloudProvider) {
+			projEnvironment = utils.CastBranchName(projEnvironment)
+			configProvider, _, err := utils.GetConfigProviderAWS()
+			if err != nil {
+				fmt.Println("Error getting config provider: ", err)
+				return
+			}
+
+			client := amplify.NewFromConfig(configProvider)
+			HandleAWS(client, project, projEnvironment, isGetAll, args)
 		}
 
 	},
@@ -116,6 +128,55 @@ func GetInputedEnv(client objectstorage.ObjectStorageClient, namespace string, p
 		}
 	}
 
+}
+
+func HandleOCI(client objectstorage.ObjectStorageClient, namespace, project, projEnvironment, envType string, isGetAll bool, args []string) {
+	if isGetAll {
+		ReadFullObject(client, namespace, project, projEnvironment, envType)
+	} else {
+		envNames := args
+		GetInputedEnv(client, namespace, project, projEnvironment, envType, envNames)
+	}
+}
+
+func HandleAWS(client *amplify.Client, project, projEnvironment string, isGetAll bool, args []string) {
+	apps, err := client.ListApps(context.Background(), &amplify.ListAppsInput{})
+	if err != nil {
+		fmt.Println("Error getting apps: ", err)
+		return
+	}
+
+	var branchInfos *amplify.GetBranchOutput
+
+	for _, app := range apps.Apps {
+		if *app.Name == project {
+			branchInfos, err = client.GetBranch(context.Background(), &amplify.GetBranchInput{
+				AppId:      common.String(*app.AppId),
+				BranchName: common.String(projEnvironment),
+			})
+
+			if err != nil {
+				fmt.Printf("Error getting app in branch \"%s\": %s", projEnvironment, err)
+				return
+			}
+		}
+	}
+
+	if isGetAll {
+		for envName, envValue := range branchInfos.Branch.EnvironmentVariables {
+			fmt.Printf("%s=%s\n", envName, envValue)
+		}
+	} else {
+		envNames := args
+		for _, envName := range envNames {
+			envValue, ok := branchInfos.Branch.EnvironmentVariables[envName]
+			if !ok {
+				fmt.Printf("Environment variable \"%s\" not found in project \"%s\" in \"%s\" environment\n", envName, project, projEnvironment)
+			} else {
+				fmt.Printf("%s=%s\n", envName, envValue)
+			}
+		}
+	}
 }
 
 func ReadFullObject(client objectstorage.ObjectStorageClient, namespace string, project string, projEnvironment string, envType string) {

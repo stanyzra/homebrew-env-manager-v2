@@ -10,8 +10,14 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"strings"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+
+	"github.com/aws/aws-sdk-go-v2/config"
 
 	"github.com/oracle/oci-go-sdk/example/helpers"
 	"github.com/oracle/oci-go-sdk/v49/common"
@@ -95,7 +101,7 @@ func GetFlagString(cmd *cobra.Command, name string, validOptions []string) (stri
 	return value, nil
 }
 
-// GetFlagString reads and validates a string flag
+// GetConfigProviderOCI returns a ConfigurationProvider for OCI
 func GetConfigProviderOCI() (common.ConfigurationProvider, string, error) {
 	userHome, err := os.UserHomeDir()
 	if err != nil {
@@ -105,6 +111,63 @@ func GetConfigProviderOCI() (common.ConfigurationProvider, string, error) {
 	configFileName := fmt.Sprintf("%s/%s", userHome, ".env-manager/config")
 
 	return common.CustomProfileConfigProvider(fmt.Sprintf("%s/.env-manager/config", userHome), "OCI"), configFileName, nil
+}
+
+// GetConfigProviderAWS returns a ConfigurationProvider for AWS
+func GetConfigProviderAWS() (aws.Config, string, error) {
+	userHome, err := os.UserHomeDir()
+	if err != nil {
+		fmt.Println("Error getting user home directory: ", err)
+		return aws.Config{}, "", err
+	}
+
+	configFileName := fmt.Sprintf("%s/%s", userHome, ".env-manager/config")
+
+	configFile, err := ini.Load(configFileName)
+	if err != nil {
+		fmt.Println("Error loading config file: ", err)
+		return aws.Config{}, "", err
+	}
+
+	awsConfig := configFile.Section("AWS")
+
+	awsAccessKeyID := awsConfig.Key("aws_access_key_id").String()
+	awsSecretAccessKey := awsConfig.Key("aws_secret_access_key").String()
+	awsRegion := awsConfig.Key("region").String()
+
+	awsCreds := credentials.NewStaticCredentialsProvider(awsAccessKeyID, awsSecretAccessKey, "")
+
+	configProvider, err := config.LoadDefaultConfig(context.TODO(),
+		config.WithRegion(awsRegion),
+		config.WithCredentialsProvider(awsCreds))
+
+	if err != nil {
+		log.Fatalf("unable to load SDK config, %v", err)
+	}
+
+	return configProvider, configFileName, nil
+}
+
+// GetCloudProvider returns the cloud provider for a given project
+func GetCloudProvider(project string, projectProviders []ProjectProvider) []string {
+	for _, provider := range projectProviders {
+		if provider.Name == project {
+			return provider.CloudProvider
+		}
+	}
+	return nil
+}
+
+// Cast the project environment to a valid branch name for AWS Amplify
+func CastBranchName(branchName string) string {
+	switch branchName {
+	case "dev":
+		return "development"
+	case "prod":
+		return "production"
+	default:
+		return branchName
+	}
 }
 
 // SaveEnvFile cast a ini.File to a string and saves it in OCI Object Storage

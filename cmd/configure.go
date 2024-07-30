@@ -122,9 +122,36 @@ func SaveCredentials(configFileName string, credentials map[string]string, provi
 // func manageDGO() {
 // 	fmt.Println("TO DO")
 // }
-// func manageAWS() {
-// 	fmt.Println("TO DO")
-// }
+
+func manageAWS() map[string]string {
+	questions := []string{
+		"Enter Access Key ID: ",
+		"Enter Secret Access Key: ",
+		"Enter region: ",
+	}
+
+	credentialKeys := []string{"aws_access_key_id", "aws_secret_access_key", "region"}
+	credentials := make(map[string]string)
+
+	i := 0
+	reader := bufio.NewReader(os.Stdin)
+	for {
+		if i == len(questions) {
+			break
+		}
+		fmt.Println(questions[i])
+		input, _ := reader.ReadString('\n')
+		input = strings.TrimSpace(input)
+		if input == "" {
+			fmt.Println("Input cannot be empty")
+			continue
+		}
+		credentials[credentialKeys[i]] = input
+		i++
+	}
+
+	return credentials
+}
 
 func ManageCloudProvider(provider int) {
 	var credentials map[string]string
@@ -141,6 +168,7 @@ func ManageCloudProvider(provider int) {
 		credentials = ManageOCI()
 	case 1:
 		fmt.Println("Configuring AWS")
+		credentials = manageAWS()
 	case 2:
 		fmt.Println("Configuring DigitalOcean")
 	default:
