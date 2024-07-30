@@ -7,10 +7,21 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+	"github.com/stanyzra/env-manager-v2/internal/utils"
 )
 
 var validTypes = []string{"envs", "secrets"}
-var validProjects = []string{"collection-back-end-v2.1", "gollection-elastic"}
+
+var projectProviders = []utils.ProjectProvider{
+	{Name: "collection-back-end-v2.1", CloudProvider: []string{"OCI"}},
+	{Name: "gollection-elastic", CloudProvider: []string{"OCI"}},
+	{Name: "app-memorial-collection-v2", CloudProvider: []string{"AWS", "DGO"}},
+	{Name: `app-biblioteca-collection-v2`, CloudProvider: []string{"AWS", "DGO"}},
+	{Name: "collection-front-end-v2.1", CloudProvider: []string{"AWS", "DGO"}},
+	{Name: "app-admin-collection-v2", CloudProvider: []string{"AWS"}},
+}
+
+var validProjects = []string{"collection-back-end-v2.1", "gollection-elastic", "app-memorial-collection-v2", "app-admin-collection-v2", "collection-front-end-v2.1", "app-biblioteca-collection-v2"}
 var validEnvs = []string{"prod", "beta", "homolog", "dev"}
 
 const (
