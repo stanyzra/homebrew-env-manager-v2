@@ -39,8 +39,6 @@ flag is ignored. The file should be in INI format WITH keys and values, even tho
 		return nil
 	},
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("delete called")
-
 		project, err := utils.GetFlagString(cmd, "project", validProjects)
 		if err != nil {
 			log.Fatalf("Error: %v", err)

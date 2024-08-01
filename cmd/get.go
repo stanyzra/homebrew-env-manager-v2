@@ -101,7 +101,8 @@ variable names in the arguments.`,
 			}
 
 			client := amplify.NewFromConfig(configProvider)
-			HandleAWS(client, project, projEnvironment, isGetAll, args)
+
+			utils.HandleAWS(client, project, projEnvironment, isGetAll, "", args, "", "", cmd.Name())
 		}
 
 	},
@@ -136,46 +137,6 @@ func HandleOCI(client objectstorage.ObjectStorageClient, namespace, project, pro
 	} else {
 		envNames := args
 		GetInputedEnv(client, namespace, project, projEnvironment, envType, envNames)
-	}
-}
-
-func HandleAWS(client *amplify.Client, project, projEnvironment string, isGetAll bool, args []string) {
-	apps, err := client.ListApps(context.Background(), &amplify.ListAppsInput{})
-	if err != nil {
-		fmt.Println("Error getting apps: ", err)
-		return
-	}
-
-	var branchInfos *amplify.GetBranchOutput
-
-	for _, app := range apps.Apps {
-		if *app.Name == project {
-			branchInfos, err = client.GetBranch(context.Background(), &amplify.GetBranchInput{
-				AppId:      common.String(*app.AppId),
-				BranchName: common.String(projEnvironment),
-			})
-
-			if err != nil {
-				fmt.Printf("Error getting app in branch \"%s\": %s", projEnvironment, err)
-				return
-			}
-		}
-	}
-
-	if isGetAll {
-		for envName, envValue := range branchInfos.Branch.EnvironmentVariables {
-			fmt.Printf("%s=%s\n", envName, envValue)
-		}
-	} else {
-		envNames := args
-		for _, envName := range envNames {
-			envValue, ok := branchInfos.Branch.EnvironmentVariables[envName]
-			if !ok {
-				fmt.Printf("Environment variable \"%s\" not found in project \"%s\" in \"%s\" environment\n", envName, project, projEnvironment)
-			} else {
-				fmt.Printf("%s=%s\n", envName, envValue)
-			}
-		}
 	}
 }
 
