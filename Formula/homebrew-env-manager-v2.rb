@@ -5,8 +5,8 @@
 class HomebrewEnvManagerV2 < Formula
   desc "Environment variable manager for aws amplify, dgo apps and oci object storage,"
   homepage "https://github.com/stanyzra/homebrew-env-manager-v2"
-  url "https://github.com/stanyzra/homebrew-env-manager-v2/archive/refs/tags/v0.5.0.tar.gz"
-  sha256 "07bf14cbc4aedba0372b3727424f4e7726941b3531583980e1c07b439ef25968"
+  url "https://github.com/stanyzra/homebrew-env-manager-v2/archive/refs/tags/v0.6.0.tar.gz"
+  sha256 "e3e2bda9ebf3d8e02303214c588135411eb24ad8a15ddb149f0dcce043c222b3"
   license "Apache-2.0"
 
   depends_on "go" => :build
@@ -16,6 +16,6 @@ class HomebrewEnvManagerV2 < Formula
   end
 
   test do
-    assert_match "0.5.0", shell_output("#{bin}/env-manager-v2 --version")
+    assert_match "0.6.0", shell_output("#{bin}/env-manager-v2 --version")
   end
 end
