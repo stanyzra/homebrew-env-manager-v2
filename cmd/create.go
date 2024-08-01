@@ -8,6 +8,7 @@ import (
 	"log"
 	"strings"
 
+	"github.com/aws/aws-sdk-go-v2/service/amplify"
 	"github.com/oracle/oci-go-sdk/example/helpers"
 	"github.com/oracle/oci-go-sdk/v49/objectstorage"
 	"github.com/spf13/cobra"
@@ -70,63 +71,67 @@ update command to update an existing environment variable or secret.`,
 			log.Fatalf("Error reading option flag: %v", err)
 		}
 
-		fileName := fmt.Sprintf("%s_%s", projEnvironment, envType)
-
-		configProvider, configFileName, err := utils.GetConfigProviderOCI()
-
+		envName, err := cmd.Flags().GetString("name")
 		if err != nil {
-			fmt.Println("Error getting config provider: ", err)
-			return
+			log.Fatalf("Error reading option flag: %v", err)
 		}
 
-		ini_config, err := ini.Load(configFileName)
+		envValue, err := cmd.Flags().GetString("value")
 		if err != nil {
-			fmt.Println("Error loading config file: ", err)
-			return
+			log.Fatalf("Error reading option flag: %v", err)
 		}
 
-		sec := ini_config.Section("OCI")
-		namespace := sec.Key("namespace").String()
+		cloudProvider := utils.GetCloudProvider(project, projectProviders)
 
-		if err != nil {
-			fmt.Println("Error getting config provider: ", err)
-			return
-		}
+		if utils.StringInSlice("OCI", cloudProvider) {
+			fileName := fmt.Sprintf("%s_%s", projEnvironment, envType)
 
-		client, err := objectstorage.NewObjectStorageClientWithConfigurationProvider(configProvider)
-		helpers.FatalIfError(err)
+			configProvider, configFileName, err := utils.GetConfigProviderOCI()
 
-		if filePath != "" {
-			CreateEnvFromFile(client, namespace, project, projEnvironment, envType, fileName, filePath)
-		} else {
-			envName, err := cmd.Flags().GetString("name")
 			if err != nil {
-				log.Fatalf("Error reading option flag: %v", err)
+				fmt.Println("Error getting config provider: ", err)
+				return
 			}
 
-			envValue, err := cmd.Flags().GetString("value")
+			ini_config, err := ini.Load(configFileName)
 			if err != nil {
-				log.Fatalf("Error reading option flag: %v", err)
+				fmt.Println("Error loading config file: ", err)
+				return
 			}
 
-			CreateSingleEnv(client, namespace, project, projEnvironment, envType, envName, envValue, fileName)
+			sec := ini_config.Section("OCI")
+			namespace := sec.Key("namespace").String()
+
+			if err != nil {
+				fmt.Println("Error getting config provider: ", err)
+				return
+			}
+
+			client, err := objectstorage.NewObjectStorageClientWithConfigurationProvider(configProvider)
+			helpers.FatalIfError(err)
+
+			if filePath != "" {
+				CreateEnvFromFile(client, namespace, project, projEnvironment, envType, fileName, filePath)
+			} else {
+				CreateSingleEnv(client, namespace, project, projEnvironment, envType, envName, envValue, fileName)
+			}
+
+		} else if utils.StringInSlice("DGO", cloudProvider) && projEnvironment == "prod" {
+			fmt.Println("DGO")
+
+		} else if utils.StringInSlice("AWS", cloudProvider) {
+			projEnvironment = utils.CastBranchName(projEnvironment)
+			configProvider, _, err := utils.GetConfigProviderAWS()
+			if err != nil {
+				fmt.Println("Error getting config provider: ", err)
+				return
+			}
+
+			client := amplify.NewFromConfig(configProvider)
+			utils.HandleAWS(client, project, projEnvironment, false, filePath, args, envName, envValue, cmd.Name())
 		}
+
 	},
-}
-
-func CreateEnvironmentVariables(envFile *ini.File, userEnvsFile *ini.File) bool {
-	isSaved := false
-	for _, key := range userEnvsFile.Section("").Keys() {
-		if envFile.Section("").HasKey(key.Name()) {
-			fmt.Printf("[WARNING] Environment variable \"%s\" already exists\n", key.Name())
-			continue
-		}
-
-		isSaved = true
-		envFile.Section("").Key(key.Name()).SetValue(key.Value())
-	}
-
-	return isSaved
 }
 
 func CreateEnvFromFile(client objectstorage.ObjectStorageClient, namespace string, project string, projEnvironment string, envType string, fileName string, filePath string) {
@@ -143,7 +148,7 @@ func CreateEnvFromFile(client objectstorage.ObjectStorageClient, namespace strin
 		return
 	}
 
-	if CreateEnvironmentVariables(envFile, userEnvFile) {
+	if utils.CreateEnvironmentVariables(envFile, userEnvFile) {
 		utils.SaveEnvFile(client, namespace, project, fileName, envFile, bucketName)
 		fmt.Printf("Environment variables saved in project \"%s\" in \"%s\" environment\n", project, projEnvironment)
 	}

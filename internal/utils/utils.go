@@ -16,6 +16,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/amplify"
 
 	"github.com/aws/aws-sdk-go-v2/config"
 
@@ -216,4 +217,119 @@ func GetUserPermission(message string) bool {
 			fmt.Println("Invalid response. Please type 'y' or 'n'.")
 		}
 	}
+}
+
+// HandleAWS handles the AWS Amplify environment variables and controlls the command function
+func HandleAWS(client *amplify.Client, project, projEnvironment string, isGetAll bool, filePath string, args []string, envName string, envValue string, command string) {
+	apps, err := client.ListApps(context.Background(), &amplify.ListAppsInput{})
+	var appId string
+	if err != nil {
+		fmt.Println("Error getting apps: ", err)
+		return
+	}
+
+	var branchInfos *amplify.GetBranchOutput
+
+	for _, app := range apps.Apps {
+		if *app.Name == project {
+			branchInfos, err = client.GetBranch(context.Background(), &amplify.GetBranchInput{
+				AppId:      common.String(*app.AppId),
+				BranchName: common.String(projEnvironment),
+			})
+			appId = *app.AppId
+			if err != nil {
+				fmt.Printf("Error getting app in branch \"%s\": %s", projEnvironment, err)
+				return
+			}
+		}
+	}
+
+	switch command {
+	case "create":
+		CreateAWSEnvs(branchInfos, client, project, projEnvironment, filePath, envName, envValue, appId)
+	case "get":
+		PrintAWSEnvs(branchInfos, project, projEnvironment, isGetAll, args)
+	default:
+		fmt.Println("Invalid command")
+	}
+
+}
+
+// PrintAWSEnvs reads the environment variables from AWS Amplify app
+func PrintAWSEnvs(branchInfos *amplify.GetBranchOutput, project string, projEnvironment string, isGetAll bool, args []string) {
+	if isGetAll {
+		for envName, envValue := range branchInfos.Branch.EnvironmentVariables {
+			fmt.Printf("%s=%s\n", envName, envValue)
+		}
+	} else {
+		envNames := args
+		for _, envName := range envNames {
+			envValue, ok := branchInfos.Branch.EnvironmentVariables[envName]
+			if !ok {
+				fmt.Printf("Environment variable \"%s\" not found in project \"%s\" in \"%s\" environment\n", envName, project, projEnvironment)
+			} else {
+				fmt.Printf("%s=%s\n", envName, envValue)
+			}
+		}
+	}
+}
+
+// CreateAWSEnvs creates environment variables in AWS Amplify app
+func CreateAWSEnvs(branchInfos *amplify.GetBranchOutput, client *amplify.Client, project string, projEnvironment string, filePath string, envName string, envValue string, appId string) {
+	iniAWS := ini.Empty()
+	var isSaved bool
+
+	for envName, envValue := range branchInfos.Branch.EnvironmentVariables {
+		iniAWS.Section("").Key(envName).SetValue(envValue)
+	}
+
+	if filePath != "" {
+		userEnvFile, err := ini.Load(filePath)
+		if err != nil {
+			fmt.Println("Error loading file: ", err)
+			return
+		}
+
+		isSaved = CreateEnvironmentVariables(iniAWS, userEnvFile)
+
+	} else {
+		if iniAWS.Section("").HasKey(envName) {
+			fmt.Printf("[WARNING] Environment variable \"%s\" already exists in project \"%s\" in \"%s\" environment\n", envName, project, projEnvironment)
+			return
+		}
+
+		iniAWS.Section("").Key(envName).SetValue(envValue)
+		isSaved = true
+	}
+
+	if isSaved {
+		_, err := client.UpdateBranch(context.Background(), &amplify.UpdateBranchInput{
+			AppId:                common.String(appId),
+			BranchName:           branchInfos.Branch.BranchName,
+			EnvironmentVariables: iniAWS.Section("").KeysHash(),
+		})
+
+		if err != nil {
+			fmt.Println("Error updating branch: ", err)
+			return
+		}
+
+		fmt.Printf("Environment variables saved in project \"%s\" in \"%s\" environment\n", project, projEnvironment)
+	}
+}
+
+// CreateEnvironmentVariables creates environment variables in a ini.File
+func CreateEnvironmentVariables(envFile *ini.File, userEnvsFile *ini.File) bool {
+	isSaved := false
+	for _, key := range userEnvsFile.Section("").Keys() {
+		if envFile.Section("").HasKey(key.Name()) {
+			fmt.Printf("[WARNING] Environment variable \"%s\" already exists\n", key.Name())
+			continue
+		}
+
+		isSaved = true
+		envFile.Section("").Key(key.Name()).SetValue(key.Value())
+	}
+
+	return isSaved
 }
