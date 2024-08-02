@@ -128,7 +128,7 @@ update command to update an existing environment variable or secret.`,
 			}
 
 			client := amplify.NewFromConfig(configProvider)
-			utils.HandleAWS(client, project, projEnvironment, false, filePath, args, envName, envValue, cmd.Name())
+			utils.HandleAWS(client, project, projEnvironment, false, filePath, args, envName, envValue, false, cmd.Name())
 		}
 
 	},

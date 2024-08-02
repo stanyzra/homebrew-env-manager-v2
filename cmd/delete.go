@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/aws/aws-sdk-go-v2/service/amplify"
 	"github.com/oracle/oci-go-sdk/example/helpers"
 	"github.com/oracle/oci-go-sdk/v49/objectstorage"
 	"github.com/spf13/cobra"
@@ -64,53 +65,56 @@ flag is ignored. The file should be in INI format WITH keys and values, even tho
 			log.Fatalf("Error reading option flag: %v", err)
 		}
 
-		fileName := fmt.Sprintf("%s_%s", projEnvironment, envType)
+		cloudProvider := utils.GetCloudProvider(project, projectProviders)
 
-		configProvider, configFileName, err := utils.GetConfigProviderOCI()
+		if utils.StringInSlice("OCI", cloudProvider) {
+			fileName := fmt.Sprintf("%s_%s", projEnvironment, envType)
 
-		if err != nil {
-			fmt.Println("Error getting config provider: ", err)
-			return
+			configProvider, configFileName, err := utils.GetConfigProviderOCI()
+
+			if err != nil {
+				fmt.Println("Error getting config provider: ", err)
+				return
+			}
+
+			ini_config, err := ini.Load(configFileName)
+			if err != nil {
+				fmt.Println("Error loading config file: ", err)
+				return
+			}
+
+			sec := ini_config.Section("OCI")
+			namespace := sec.Key("namespace").String()
+
+			if err != nil {
+				fmt.Println("Error getting config provider: ", err)
+				return
+			}
+
+			client, err := objectstorage.NewObjectStorageClientWithConfigurationProvider(configProvider)
+			helpers.FatalIfError(err)
+
+			if filePath != "" {
+				fmt.Printf("Deleting from file: %s\n", filePath)
+				DeleteFromFile(client, namespace, project, projEnvironment, envType, filePath, fileName, isQuiet)
+			} else {
+				DeleteFromArgs(client, namespace, project, projEnvironment, envType, args, fileName, isQuiet)
+			}
+		} else if utils.StringInSlice("DGO", cloudProvider) && projEnvironment == "prod" {
+			fmt.Println("DGO")
+		} else if utils.StringInSlice("AWS", cloudProvider) {
+			projEnvironment = utils.CastBranchName(projEnvironment)
+			configProvider, _, err := utils.GetConfigProviderAWS()
+			if err != nil {
+				fmt.Println("Error getting config provider: ", err)
+				return
+			}
+
+			client := amplify.NewFromConfig(configProvider)
+			utils.HandleAWS(client, project, projEnvironment, false, filePath, args, "", "", isQuiet, cmd.Name())
 		}
 
-		ini_config, err := ini.Load(configFileName)
-		if err != nil {
-			fmt.Println("Error loading config file: ", err)
-			return
-		}
-
-		sec := ini_config.Section("OCI")
-		namespace := sec.Key("namespace").String()
-
-		if err != nil {
-			fmt.Println("Error getting config provider: ", err)
-			return
-		}
-
-		client, err := objectstorage.NewObjectStorageClientWithConfigurationProvider(configProvider)
-		helpers.FatalIfError(err)
-
-		if filePath != "" {
-			fmt.Printf("Deleting from file: %s\n", filePath)
-			DeleteFromFile(client, namespace, project, projEnvironment, envType, filePath, fileName, isQuiet)
-		} else {
-			DeleteFromArgs(client, namespace, project, projEnvironment, envType, args, fileName, isQuiet)
-		}
 	},
-}
-
-func DeleteEnvironmentVariables(envFile *ini.File, envNames []string) bool {
-	isSaved := false
-	for _, envName := range envNames {
-		sec := envFile.Section("")
-		if !sec.HasKey(envName) {
-			fmt.Printf("Environment variable %s not found\n", envName)
-			continue
-		}
-		sec.DeleteKey(envName)
-		isSaved = true
-	}
-	return isSaved
 }
 
 func ConfirmAndSave(client objectstorage.ObjectStorageClient, namespace, project, fileName, projEnvironment string, envFile *ini.File, isQuiet bool) {
@@ -129,7 +133,7 @@ func DeleteFromArgs(client objectstorage.ObjectStorageClient, namespace, project
 		return
 	}
 
-	if DeleteEnvironmentVariables(envFile, envNames) {
+	if utils.DeleteEnvironmentVariables(envFile, envNames) {
 		ConfirmAndSave(client, namespace, project, fileName, projEnvironment, envFile, isQuiet)
 	}
 }
@@ -151,7 +155,7 @@ func DeleteFromFile(client objectstorage.ObjectStorageClient, namespace, project
 		return
 	}
 
-	if DeleteEnvironmentVariables(envFile, userEnvFile.Section("").KeyStrings()) {
+	if utils.DeleteEnvironmentVariables(envFile, userEnvFile.Section("").KeyStrings()) {
 		ConfirmAndSave(client, namespace, project, fileName, projEnvironment, envFile, isQuiet)
 	}
 }

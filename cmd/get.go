@@ -102,7 +102,7 @@ variable names in the arguments.`,
 
 			client := amplify.NewFromConfig(configProvider)
 
-			utils.HandleAWS(client, project, projEnvironment, isGetAll, "", args, "", "", cmd.Name())
+			utils.HandleAWS(client, project, projEnvironment, isGetAll, "", args, "", "", false, cmd.Name())
 		}
 
 	},
