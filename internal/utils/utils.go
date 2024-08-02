@@ -220,7 +220,7 @@ func GetUserPermission(message string) bool {
 }
 
 // HandleAWS handles the AWS Amplify environment variables and controlls the command function
-func HandleAWS(client *amplify.Client, project, projEnvironment string, isGetAll bool, filePath string, args []string, envName string, envValue string, command string) {
+func HandleAWS(client *amplify.Client, project, projEnvironment string, isGetAll bool, filePath string, args []string, envName string, envValue string, isQuiet bool, command string) {
 	apps, err := client.ListApps(context.Background(), &amplify.ListAppsInput{})
 	var appId string
 	if err != nil {
@@ -249,10 +249,51 @@ func HandleAWS(client *amplify.Client, project, projEnvironment string, isGetAll
 		CreateAWSEnvs(branchInfos, client, project, projEnvironment, filePath, envName, envValue, appId)
 	case "get":
 		PrintAWSEnvs(branchInfos, project, projEnvironment, isGetAll, args)
+	case "delete":
+		DeleteAWSEnvs(branchInfos, client, project, projEnvironment, filePath, args, isQuiet, appId)
+	case "update":
+		log.Println("Update")
 	default:
 		fmt.Println("Invalid command")
 	}
+}
 
+// DeleteAWSEnvs deletes environment variables in a AWS Amplify app
+func DeleteAWSEnvs(branchInfos *amplify.GetBranchOutput, client *amplify.Client, project string, projEnvironment string, filePath string, envNames []string, isQuiet bool, appId string) {
+	iniAWS := ini.Empty()
+
+	for envName, envValue := range branchInfos.Branch.EnvironmentVariables {
+		iniAWS.Section("").Key(envName).SetValue(envValue)
+	}
+
+	if filePath != "" {
+		userEnvFile, err := ini.Load(filePath)
+		if err != nil {
+			fmt.Println("Error loading file: ", err)
+			if _, err := os.Stat(filePath); err == nil {
+				fmt.Println("Are you sure the file are in INI format (<key>=<value>)?")
+			}
+			return
+		}
+		envNames = userEnvFile.Section("").KeyStrings()
+		fmt.Printf("Deleting from file: %s\n", filePath)
+	}
+
+	if DeleteEnvironmentVariables(iniAWS, envNames) {
+		if isQuiet || GetUserPermission("Are you sure you want to delete the environment variables?") {
+			_, err := client.UpdateBranch(context.Background(), &amplify.UpdateBranchInput{
+				AppId:                common.String(appId),
+				BranchName:           branchInfos.Branch.BranchName,
+				EnvironmentVariables: iniAWS.Section("").KeysHash(),
+			})
+
+			if err != nil {
+				fmt.Println("Error updating branch: ", err)
+				return
+			}
+			fmt.Printf("Environment variables deleted in project \"%s\" in \"%s\" environment\n", project, projEnvironment)
+		}
+	}
 }
 
 // PrintAWSEnvs reads the environment variables from AWS Amplify app
@@ -274,10 +315,10 @@ func PrintAWSEnvs(branchInfos *amplify.GetBranchOutput, project string, projEnvi
 	}
 }
 
-// CreateAWSEnvs creates environment variables in AWS Amplify app
+// CreateAWSEnvs creates environment variables in a AWS Amplify app
 func CreateAWSEnvs(branchInfos *amplify.GetBranchOutput, client *amplify.Client, project string, projEnvironment string, filePath string, envName string, envValue string, appId string) {
 	iniAWS := ini.Empty()
-	var isSaved bool
+	isSaved := false
 
 	for envName, envValue := range branchInfos.Branch.EnvironmentVariables {
 		iniAWS.Section("").Key(envName).SetValue(envValue)
@@ -316,6 +357,21 @@ func CreateAWSEnvs(branchInfos *amplify.GetBranchOutput, client *amplify.Client,
 
 		fmt.Printf("Environment variables saved in project \"%s\" in \"%s\" environment\n", project, projEnvironment)
 	}
+}
+
+// DeleteFromFile deletes environment variables in a ini.File
+func DeleteEnvironmentVariables(envFile *ini.File, envNames []string) bool {
+	isSaved := false
+	for _, envName := range envNames {
+		sec := envFile.Section("")
+		if !sec.HasKey(envName) {
+			fmt.Printf("Environment variable %s not found\n", envName)
+			continue
+		}
+		sec.DeleteKey(envName)
+		isSaved = true
+	}
+	return isSaved
 }
 
 // CreateEnvironmentVariables creates environment variables in a ini.File

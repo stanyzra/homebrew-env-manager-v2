@@ -33,4 +33,4 @@ jobs:
            
             install: 'system "go", "build", "-o", bin/"env-manager-v2"'
             
-            test: 'assert_match "0.6.0", shell_output("#{bin}/env-manager-v2 --version")'
+            test: 'assert_match "0.7.0", shell_output("#{bin}/env-manager-v2 --version")'
