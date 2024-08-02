@@ -252,9 +252,53 @@ func HandleAWS(client *amplify.Client, project, projEnvironment string, isGetAll
 	case "delete":
 		DeleteAWSEnvs(branchInfos, client, project, projEnvironment, filePath, args, isQuiet, appId)
 	case "update":
-		log.Println("Update")
+		UpdateAWSEnvs(branchInfos, client, project, projEnvironment, filePath, envName, envValue, appId)
 	default:
 		fmt.Println("Invalid command")
+	}
+}
+
+// UpdateAWSEnvs updates environment variables in a AWS Amplify app
+func UpdateAWSEnvs(branchInfos *amplify.GetBranchOutput, client *amplify.Client, project string, projEnvironment string, filePath string, envName string, envValue string, appId string) {
+	iniAWS := ini.Empty()
+	isSaved := false
+
+	for envName, envValue := range branchInfos.Branch.EnvironmentVariables {
+		iniAWS.Section("").Key(envName).SetValue(envValue)
+	}
+
+	if filePath != "" {
+		userEnvFile, err := ini.Load(filePath)
+		if err != nil {
+			fmt.Println("Error loading file: ", err)
+			return
+		}
+
+		isSaved = UpdateEnvironmentVariables(iniAWS, userEnvFile)
+
+	} else {
+		if !iniAWS.Section("").HasKey(envName) {
+			fmt.Printf("[WARNING] Environment variable \"%s\" not found in project \"%s\" in \"%s\" environment\n", envName, project, projEnvironment)
+			return
+		}
+
+		iniAWS.Section("").Key(envName).SetValue(envValue)
+		isSaved = true
+	}
+
+	if isSaved {
+		_, err := client.UpdateBranch(context.Background(), &amplify.UpdateBranchInput{
+			AppId:                common.String(appId),
+			BranchName:           branchInfos.Branch.BranchName,
+			EnvironmentVariables: iniAWS.Section("").KeysHash(),
+		})
+
+		if err != nil {
+			fmt.Println("Error updating branch: ", err)
+			return
+		}
+
+		fmt.Printf("Environment variables updated in project \"%s\" in \"%s\" environment\n", project, projEnvironment)
 	}
 }
 
@@ -380,6 +424,22 @@ func CreateEnvironmentVariables(envFile *ini.File, userEnvsFile *ini.File) bool 
 	for _, key := range userEnvsFile.Section("").Keys() {
 		if envFile.Section("").HasKey(key.Name()) {
 			fmt.Printf("[WARNING] Environment variable \"%s\" already exists\n", key.Name())
+			continue
+		}
+
+		isSaved = true
+		envFile.Section("").Key(key.Name()).SetValue(key.Value())
+	}
+
+	return isSaved
+}
+
+// UpdateEnvironmentVariables updates environment variables in a ini.File
+func UpdateEnvironmentVariables(envFile *ini.File, userEnvsFile *ini.File) bool {
+	isSaved := false
+	for _, key := range userEnvsFile.Section("").Keys() {
+		if !envFile.Section("").HasKey(key.Name()) {
+			fmt.Printf("[WARNING] Key \"%s\" not found in environment file\n", key.Name())
 			continue
 		}
 
