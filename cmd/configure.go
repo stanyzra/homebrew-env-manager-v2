@@ -16,7 +16,7 @@ import (
 	"gopkg.in/ini.v1"
 )
 
-var cloudProviders = []string{"OCI", "AWS", "DigitalOcean"}
+var cloudProviders = []string{"OCI", "AWS", "DGO"}
 
 // configureCmd represents the configure command
 var configureCmd = &cobra.Command{
@@ -43,17 +43,7 @@ var configureCmd = &cobra.Command{
 	},
 }
 
-func ManageOCI() map[string]string {
-	questions := []string{
-		"Enter user OCID: ",
-		"Enter fingerprint: ",
-		"Enter tenancy OCID: ",
-		"Enter region: ",
-		"Enter private key path: ",
-		"Enter OCI OS namespace: ",
-	}
-
-	credentialKeys := []string{"user", "fingerprint", "tenancy", "region", "key_file", "namespace"}
+func ManageConfigProperties(questions []string, credentialKeys []string) map[string]string {
 	credentials := make(map[string]string)
 
 	i := 0
@@ -119,42 +109,10 @@ func SaveCredentials(configFileName string, credentials map[string]string, provi
 
 }
 
-// func manageDGO() {
-// 	fmt.Println("TO DO")
-// }
-
-func manageAWS() map[string]string {
-	questions := []string{
-		"Enter Access Key ID: ",
-		"Enter Secret Access Key: ",
-		"Enter region: ",
-	}
-
-	credentialKeys := []string{"aws_access_key_id", "aws_secret_access_key", "region"}
-	credentials := make(map[string]string)
-
-	i := 0
-	reader := bufio.NewReader(os.Stdin)
-	for {
-		if i == len(questions) {
-			break
-		}
-		fmt.Println(questions[i])
-		input, _ := reader.ReadString('\n')
-		input = strings.TrimSpace(input)
-		if input == "" {
-			fmt.Println("Input cannot be empty")
-			continue
-		}
-		credentials[credentialKeys[i]] = input
-		i++
-	}
-
-	return credentials
-}
-
 func ManageCloudProvider(provider int) {
 	var credentials map[string]string
+	var questions []string
+	var credentialKeys []string
 	userHome, err := os.UserHomeDir()
 	configFileName := fmt.Sprintf("%s/%s", userHome, ".env-manager/config")
 
@@ -165,16 +123,34 @@ func ManageCloudProvider(provider int) {
 	switch provider {
 	case 0:
 		fmt.Println("Configuring OCI")
-		credentials = ManageOCI()
+		questions = []string{
+			"Enter user OCID: ",
+			"Enter fingerprint: ",
+			"Enter tenancy OCID: ",
+			"Enter region: ",
+			"Enter private key path: ",
+			"Enter OCI OS namespace: ",
+		}
+		credentialKeys = []string{"user", "fingerprint", "tenancy", "region", "key_file", "namespace"}
 	case 1:
 		fmt.Println("Configuring AWS")
-		credentials = manageAWS()
+		questions = []string{
+			"Enter Access Key ID: ",
+			"Enter Secret Access Key: ",
+			"Enter region: ",
+		}
+		credentialKeys = []string{"aws_access_key_id", "aws_secret_access_key", "region"}
 	case 2:
 		fmt.Println("Configuring DigitalOcean")
+		questions = []string{
+			"Enter DGO API Key: ",
+		}
+		credentialKeys = []string{"dgo_api_token"}
 	default:
 		fmt.Println("Invalid choice")
 	}
 
+	credentials = ManageConfigProperties(questions, credentialKeys)
 	SaveCredentials(configFileName, credentials, provider)
 }
 
