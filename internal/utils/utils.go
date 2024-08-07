@@ -17,6 +17,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/amplify"
+	"github.com/digitalocean/godo"
 
 	"github.com/aws/aws-sdk-go-v2/config"
 
@@ -159,6 +160,20 @@ func GetCloudProvider(project string, projectProviders []ProjectProvider) []stri
 	return nil
 }
 
+// Cast the project name to a valid name for DGO AppPlatform
+func CastDGOProjectName(projectName string) string {
+	switch projectName {
+	case "app-memorial-collection-v2":
+		return "collection-memorial-app"
+	case "collection-front-end-v2.1":
+		return "collection-library-app"
+	case "app-biblioteca-collection-v2":
+		return "collection-home-app"
+	default:
+		return projectName
+	}
+}
+
 // Cast the project environment to a valid branch name for AWS Amplify
 func CastBranchName(branchName string) string {
 	switch branchName {
@@ -256,6 +271,30 @@ func HandleAWS(client *amplify.Client, project, projEnvironment string, isGetAll
 	default:
 		fmt.Println("Invalid command")
 	}
+}
+
+// GetClientDGO returns a client for DGO
+func GetClientDGO() (*godo.Client, error) {
+	userHome, err := os.UserHomeDir()
+	if err != nil {
+		fmt.Println("Error getting user home directory: ", err)
+		return nil, err
+	}
+
+	configFileName := fmt.Sprintf("%s/%s", userHome, ".env-manager/config")
+
+	configFile, err := ini.Load(configFileName)
+	if err != nil {
+		fmt.Println("Error loading config file: ", err)
+		return nil, err
+
+	}
+
+	dgoConfig := configFile.Section("DGO")
+	dgoToken := dgoConfig.Key("dgo_api_token").String()
+	client := godo.NewFromToken(dgoToken)
+
+	return client, nil
 }
 
 // UpdateAWSEnvs updates environment variables in a AWS Amplify app
