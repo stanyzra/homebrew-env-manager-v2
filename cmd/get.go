@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/amplify"
+	"github.com/digitalocean/godo"
 	"github.com/oracle/oci-go-sdk/example/helpers"
 	"github.com/oracle/oci-go-sdk/v49/common"
 	"github.com/oracle/oci-go-sdk/v49/objectstorage"
@@ -90,7 +91,13 @@ variable names in the arguments.`,
 			HandleOCI(client, namespace, project, projEnvironment, envType, isGetAll, args)
 
 		} else if utils.StringInSlice("DGO", cloudProvider) && projEnvironment == "prod" {
-			fmt.Println("DGO")
+			client, err := utils.GetClientDGO()
+			if err != nil {
+				fmt.Println("Error getting client: ", err)
+				return
+			}
+
+			HandleDGO(client, project, projEnvironment, envType, isGetAll, args)
 
 		} else if utils.StringInSlice("AWS", cloudProvider) {
 			projEnvironment = utils.CastBranchName(projEnvironment)
@@ -106,6 +113,60 @@ variable names in the arguments.`,
 		}
 
 	},
+}
+
+func HandleDGO(client *godo.Client, project, projEnvironment, envType string, isGetAll bool, envNames []string) {
+	castedProject := utils.CastDGOProjectName(project)
+	ctx := context.TODO()
+
+	apps, _, err := client.Apps.List(ctx, nil)
+	if err != nil {
+		log.Fatalf("Error getting apps: %v", err)
+	}
+
+	var specificApp *godo.App
+	for _, app := range apps {
+		if app.Spec.Name == castedProject {
+			specificApp, _, err = client.Apps.Get(ctx, app.ID)
+			if err != nil {
+				log.Fatalf("Error getting app: %v", err)
+			}
+			break
+		}
+	}
+
+	if specificApp == nil {
+		log.Fatalf("App with project name %s not found", project)
+	}
+
+	printEnvs := func(component *godo.AppStaticSiteSpec) error {
+		if isGetAll {
+			for _, envVar := range component.Envs {
+				fmt.Printf("%s=%s\n", envVar.Key, envVar.Value)
+			}
+		} else {
+			envsAsIni := ini.Empty()
+			for _, envVar := range component.Envs {
+				envsAsIni.Section("").NewKey(envVar.Key, envVar.Value)
+			}
+			for _, envName := range envNames {
+				if envsAsIni.Section("").HasKey(envName) {
+					value := envsAsIni.Section("").Key(envName).String()
+					fmt.Printf("%s=%s\n", envName, value)
+				} else {
+					fmt.Printf("Environment variable \"%s\" not found in project \"%s\" in \"%s\" environment\n", envName, project, projEnvironment)
+				}
+			}
+		}
+		return nil
+	}
+
+	err = godo.ForEachAppSpecComponent(specificApp.Spec, func(component *godo.AppStaticSiteSpec) error {
+		return printEnvs(component)
+	})
+	if err != nil {
+		log.Fatalf("Error iterating over app components: %v", err)
+	}
 }
 
 func GetInputedEnv(client objectstorage.ObjectStorageClient, namespace string, project string, projEnvironment string, envType string, envNames []string) {
