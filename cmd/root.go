@@ -23,6 +23,7 @@ var projectProviders = []utils.ProjectProvider{
 
 var validProjects = []string{"collection-back-end-v2.1", "gollection-elastic", "app-memorial-collection-v2", "app-admin-collection-v2", "collection-front-end-v2.1", "app-biblioteca-collection-v2"}
 var validEnvs = []string{"prod", "beta", "homolog", "dev"}
+var validAppComponents = []string{"collection-memorial-white-screen", "service", "collection-home-white-screen"}
 
 const (
 	// Bucket name

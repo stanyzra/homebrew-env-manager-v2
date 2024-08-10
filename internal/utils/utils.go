@@ -166,9 +166,9 @@ func CastDGOProjectName(projectName string) string {
 	case "app-memorial-collection-v2":
 		return "collection-memorial-app"
 	case "collection-front-end-v2.1":
-		return "collection-library-app"
-	case "app-biblioteca-collection-v2":
 		return "collection-home-app"
+	case "app-biblioteca-collection-v2":
+		return "collection-library-app"
 	default:
 		return projectName
 	}
@@ -440,6 +440,45 @@ func CreateAWSEnvs(branchInfos *amplify.GetBranchOutput, client *amplify.Client,
 
 		fmt.Printf("Environment variables saved in project \"%s\" in \"%s\" environment\n", project, projEnvironment)
 	}
+}
+
+// GetDGOApp gets a DGO App by its project name
+func GetDGOApp(client *godo.Client, project string) *godo.App {
+	castedProject := CastDGOProjectName(project)
+	ctx := context.TODO()
+
+	apps, _, err := client.Apps.List(ctx, nil)
+	if err != nil {
+		log.Fatalf("Error getting apps: %v", err)
+	}
+
+	var specificApp *godo.App
+	for _, app := range apps {
+		if app.Spec.Name == castedProject {
+			specificApp, _, err = client.Apps.Get(ctx, app.ID)
+			if err != nil {
+				log.Fatalf("Error getting app: %v", err)
+			}
+			break
+		}
+	}
+
+	if specificApp == nil {
+		log.Fatalf("App with project name %s not found", project)
+	}
+
+	return specificApp
+}
+
+// GetDGOEnvsAsIni converts a slice of AppVariableDefinition to an ini.File
+func GetDGOEnvsAsIni(appEnvs []*godo.AppVariableDefinition) *ini.File {
+	envsAsIni := ini.Empty()
+
+	for _, envVar := range appEnvs {
+		envsAsIni.Section("").NewKey(envVar.Key, envVar.Value)
+	}
+
+	return envsAsIni
 }
 
 // DeleteFromFile deletes environment variables in a ini.File

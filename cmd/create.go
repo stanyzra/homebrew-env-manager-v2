@@ -4,11 +4,13 @@ Copyright © 2024 NAME HERE <EMAIL ADDRESS>
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/amplify"
+	"github.com/digitalocean/godo"
 	"github.com/oracle/oci-go-sdk/example/helpers"
 	"github.com/oracle/oci-go-sdk/v49/objectstorage"
 	"github.com/spf13/cobra"
@@ -117,8 +119,13 @@ update command to update an existing environment variable or secret.`,
 			}
 
 		} else if utils.StringInSlice("DGO", cloudProvider) && projEnvironment == "prod" {
-			fmt.Println("DGO")
+			client, err := utils.GetClientDGO()
+			if err != nil {
+				fmt.Println("Error getting client: ", err)
+				return
+			}
 
+			CreateDGOEnv(client, project, projEnvironment, filePath, envName, envValue)
 		} else if utils.StringInSlice("AWS", cloudProvider) {
 			projEnvironment = utils.CastBranchName(projEnvironment)
 			configProvider, _, err := utils.GetConfigProviderAWS()
@@ -132,6 +139,69 @@ update command to update an existing environment variable or secret.`,
 		}
 
 	},
+}
+
+func CreateDGOEnv(client *godo.Client, project string, projEnvironment string, filePath string, envName string, envValue string) {
+	dgoApp := utils.GetDGOApp(client, project)
+	isSaved := false
+	createEnvs := func(component *godo.AppStaticSiteSpec) error {
+		envsAsIni := utils.GetDGOEnvsAsIni(component.Envs)
+
+		if filePath == "" {
+			if envsAsIni.Section("").HasKey(envName) {
+				fmt.Printf("[WARNING] Environment variable \"%s\" already exists in project \"%s\" in \"%s\" environment\n", envName, project, projEnvironment)
+				return nil
+			}
+
+			component.Envs = append(component.Envs, &godo.AppVariableDefinition{
+				Key:   envName,
+				Value: envValue,
+			})
+
+			isSaved = true
+		} else {
+			userEnvFile, err := ini.Load(filePath)
+			if err != nil {
+				fmt.Println("Error loading file: ", err)
+				return nil
+			}
+
+			for _, key := range userEnvFile.Section("").Keys() {
+				if envsAsIni.Section("").HasKey(key.Name()) {
+					fmt.Printf("[WARNING] Environment variable \"%s\" already exists in project \"%s\" in \"%s\" environment\n", key.Name(), project, projEnvironment)
+					continue
+				}
+
+				component.Envs = append(component.Envs, &godo.AppVariableDefinition{
+					Key:   key.Name(),
+					Value: key.Value(),
+				})
+				isSaved = true
+
+			}
+		}
+		return nil
+	}
+
+	err := godo.ForEachAppSpecComponent(dgoApp.Spec, func(component *godo.AppStaticSiteSpec) error {
+		return createEnvs(component)
+	})
+
+	if err != nil {
+		log.Fatalf("Error updating app components: %v", err)
+	}
+
+	if isSaved {
+		_, _, err = client.Apps.Update(context.TODO(), dgoApp.ID, &godo.AppUpdateRequest{
+			Spec: dgoApp.Spec,
+		})
+
+		if err != nil {
+			log.Fatalf("Error updating app: %v", err)
+		}
+
+		fmt.Printf("Environment variables saved in project \"%s\" in \"%s\" environment\n", project, projEnvironment)
+	}
 }
 
 func CreateEnvFromFile(client objectstorage.ObjectStorageClient, namespace string, project string, projEnvironment string, envType string, fileName string, filePath string) {
