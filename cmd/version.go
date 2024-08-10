@@ -14,7 +14,7 @@ var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "Show the version number of env-manager-v2",
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("0.9.0")
+		fmt.Println("1.0.0")
 	},
 }
 

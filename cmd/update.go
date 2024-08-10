@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/amplify"
+	"github.com/digitalocean/godo"
 	"github.com/oracle/oci-go-sdk/example/helpers"
 	"github.com/oracle/oci-go-sdk/v49/objectstorage"
 	"github.com/spf13/cobra"
@@ -51,17 +52,17 @@ it will not be created. Use the create command to create a new environment varia
 		return nil
 	},
 	Run: func(cmd *cobra.Command, args []string) {
-		project, err := utils.GetFlagString(cmd, "project", validProjects)
+		project, err := utils.GetFlagString(cmd, "project", utils.ValidProjects)
 		if err != nil {
 			log.Fatalf("Error: %v", err)
 		}
 
-		envType, err := utils.GetFlagString(cmd, "type", validTypes)
+		envType, err := utils.GetFlagString(cmd, "type", utils.ValidTypes)
 		if err != nil {
 			log.Fatalf("Error: %v", err)
 		}
 
-		projEnvironment, err := utils.GetFlagString(cmd, "environment", validEnvs)
+		projEnvironment, err := utils.GetFlagString(cmd, "environment", utils.ValidEnvs)
 		if err != nil {
 			log.Fatalf("Error: %v", err)
 		}
@@ -81,7 +82,7 @@ it will not be created. Use the create command to create a new environment varia
 			log.Fatalf("Error reading option flag: %v", err)
 		}
 
-		cloudProvider := utils.GetCloudProvider(project, projectProviders)
+		cloudProvider := utils.GetCloudProvider(project, utils.ProjectProviders)
 
 		if utils.StringInSlice("OCI", cloudProvider) {
 			fileName := fmt.Sprintf("%s_%s", projEnvironment, envType)
@@ -117,9 +118,16 @@ it will not be created. Use the create command to create a new environment varia
 				UpdateSingleEnv(client, namespace, project, projEnvironment, envType, envName, envValue, fileName)
 			}
 		} else if utils.StringInSlice("DGO", cloudProvider) && projEnvironment == "prod" {
-			fmt.Println("DGO")
+			client, err := utils.GetClientDGO()
+			if err != nil {
+				fmt.Println("Error getting client: ", err)
+				return
+			}
+
+			UpdateDGOEnv(client, project, filePath, projEnvironment, envName, envValue)
+
 		} else if utils.StringInSlice("AWS", cloudProvider) {
-			projEnvironment = utils.CastBranchName(projEnvironment)
+			projEnvironment = utils.CastBranchName(projEnvironment, project)
 			configProvider, _, err := utils.GetConfigProviderAWS()
 			if err != nil {
 				fmt.Println("Error getting config provider: ", err)
@@ -132,11 +140,54 @@ it will not be created. Use the create command to create a new environment varia
 	},
 }
 
+func UpdateDGOEnv(client *godo.Client, project string, filePath string, projEnvironment string, envName string, envValue string) {
+	dgoApp := utils.GetDGOApp(client, project)
+	isSaved := false
+
+	updateEnvs := func(component *godo.AppStaticSiteSpec) (bool, error) {
+		envsAsIni := utils.GetDGOEnvsAsIni(component.Envs)
+
+		if filePath == "" {
+			if !envsAsIni.Section("").HasKey(envName) {
+				fmt.Printf("[WARNING] Environment variable \"%s\" doesn't exists in project \"%s\" in \"%s\" environment\n", envName, project, projEnvironment)
+				return false, nil
+			}
+
+			envsAsIni.Section("").Key(envName).SetValue(envValue)
+			isSaved = true
+		} else {
+			userEnvsAsIni, err := ini.Load(filePath)
+			if err != nil {
+				fmt.Println("Error loading file: ", err)
+				return false, err
+			}
+
+			isSaved = UpdateEnvironmentVariables(envsAsIni, userEnvsAsIni)
+		}
+
+		if isSaved {
+			component.Envs = utils.GetDGOEnvsFromIni(envsAsIni)
+		}
+
+		return isSaved, nil
+	}
+
+	err := utils.UpdateDGOApp(client, project, dgoApp, updateEnvs)
+	if err != nil {
+		fmt.Println("Error updating app: ", err)
+		return
+	}
+
+	if isSaved {
+		fmt.Printf("Environment variables saved in project \"%s\" in \"%s\" environment\n", project, projEnvironment)
+	}
+}
+
 func UpdateEnvironmentVariables(envFile *ini.File, userEnvsFile *ini.File) bool {
 	isSaved := false
 	for _, key := range userEnvsFile.Section("").Keys() {
 		if !envFile.Section("").HasKey(key.Name()) {
-			fmt.Printf("[WARNING] Key \"%s\" not found in environment file\n", key.Name())
+			fmt.Printf("[WARNING] Key \"%s\" not found\n", key.Name())
 			continue
 		}
 
@@ -154,7 +205,7 @@ func UpdateEnvFromFile(client objectstorage.ObjectStorageClient, namespace strin
 		return
 	}
 
-	envFile, err := utils.GetEnvsFileAsIni(project, fileName, client, namespace, bucketName)
+	envFile, err := utils.GetEnvsFileAsIni(project, fileName, client, namespace, utils.BucketName)
 
 	if err != nil {
 		fmt.Println("Error loading file: ", err)
@@ -162,13 +213,13 @@ func UpdateEnvFromFile(client objectstorage.ObjectStorageClient, namespace strin
 	}
 
 	if UpdateEnvironmentVariables(envFile, userEnvFile) {
-		utils.SaveEnvFile(client, namespace, project, fileName, envFile, bucketName)
+		utils.SaveEnvFile(client, namespace, project, fileName, envFile, utils.BucketName)
 		fmt.Printf("Environment variables saved in project \"%s\" in \"%s\" environment\n", project, projEnvironment)
 	}
 }
 
 func UpdateSingleEnv(client objectstorage.ObjectStorageClient, namespace string, project string, projEnvironment string, envType string, envName string, envValue string, fileName string) {
-	envFile, err := utils.GetEnvsFileAsIni(project, fileName, client, namespace, bucketName)
+	envFile, err := utils.GetEnvsFileAsIni(project, fileName, client, namespace, utils.BucketName)
 
 	if err != nil {
 		fmt.Println("Error loading file: ", err)
@@ -181,16 +232,16 @@ func UpdateSingleEnv(client objectstorage.ObjectStorageClient, namespace string,
 	}
 
 	envFile.Section("").Key(envName).SetValue(envValue)
-	utils.SaveEnvFile(client, namespace, project, fileName, envFile, bucketName)
+	utils.SaveEnvFile(client, namespace, project, fileName, envFile, utils.BucketName)
 	fmt.Printf("Environment variables saved in project \"%s\" in \"%s\" environment\n", project, projEnvironment)
 }
 
 func init() {
 	rootCmd.AddCommand(updateCmd)
 
-	validTypesStr := strings.Join(validTypes, ", ")
-	validProjectsStr := strings.Join(validProjects, ", ")
-	validProjectEnvsStr := strings.Join(validEnvs, ", ")
+	validTypesStr := strings.Join(utils.ValidTypes, ", ")
+	validProjectsStr := strings.Join(utils.ValidProjects, ", ")
+	validProjectEnvsStr := strings.Join(utils.ValidEnvs, ", ")
 
 	updateCmd.Flags().StringP("type", "t", "envs", fmt.Sprintf("Specify the environment variable type (options: %s)", validTypesStr))
 	updateCmd.Flags().StringP("project", "p", "", fmt.Sprintf("Specify the project name (options: %s)", validProjectsStr))

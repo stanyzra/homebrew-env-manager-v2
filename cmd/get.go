@@ -47,17 +47,17 @@ variable names in the arguments.`,
 		return nil
 	},
 	Run: func(cmd *cobra.Command, args []string) {
-		project, err := utils.GetFlagString(cmd, "project", validProjects)
+		project, err := utils.GetFlagString(cmd, "project", utils.ValidProjects)
 		if err != nil {
 			log.Fatalf("Error: %v", err)
 		}
 
-		envType, err := utils.GetFlagString(cmd, "type", validTypes)
+		envType, err := utils.GetFlagString(cmd, "type", utils.ValidTypes)
 		if err != nil {
 			log.Fatalf("Error: %v", err)
 		}
 
-		projEnvironment, err := utils.GetFlagString(cmd, "environment", validEnvs)
+		projEnvironment, err := utils.GetFlagString(cmd, "environment", utils.ValidEnvs)
 		if err != nil {
 			log.Fatalf("Error: %v", err)
 		}
@@ -67,7 +67,7 @@ variable names in the arguments.`,
 			log.Fatalf("Error reading option flag: %v", err)
 		}
 
-		cloudProvider := utils.GetCloudProvider(project, projectProviders)
+		cloudProvider := utils.GetCloudProvider(project, utils.ProjectProviders)
 
 		if utils.StringInSlice("OCI", cloudProvider) {
 			configProvider, configFileName, err := utils.GetConfigProviderOCI()
@@ -100,7 +100,7 @@ variable names in the arguments.`,
 			showEnvs(client, project, projEnvironment, isGetAll, args)
 
 		} else if utils.StringInSlice("AWS", cloudProvider) {
-			projEnvironment = utils.CastBranchName(projEnvironment)
+			projEnvironment = utils.CastBranchName(projEnvironment, project)
 			configProvider, _, err := utils.GetConfigProviderAWS()
 			if err != nil {
 				fmt.Println("Error getting config provider: ", err)
@@ -138,7 +138,7 @@ func showEnvs(client *godo.Client, project string, projEnvironment string, isGet
 	}
 
 	err := godo.ForEachAppSpecComponent(specificApp.Spec, func(component *godo.AppStaticSiteSpec) error {
-		if utils.StringInSlice(component.Name, validAppComponents) {
+		if utils.StringInSlice(component.Name, utils.ValidAppComponents) {
 			return printEnvs(component)
 		}
 		return nil
@@ -151,7 +151,7 @@ func showEnvs(client *godo.Client, project string, projEnvironment string, isGet
 func GetInputedEnv(client objectstorage.ObjectStorageClient, namespace string, project string, projEnvironment string, envType string, envNames []string) {
 	fileName := fmt.Sprintf("%s_%s", projEnvironment, envType)
 
-	envFile, err := utils.GetEnvsFileAsIni(project, fileName, client, namespace, bucketName)
+	envFile, err := utils.GetEnvsFileAsIni(project, fileName, client, namespace, utils.BucketName)
 
 	if err != nil {
 		fmt.Println("Error loading file: ", err)
@@ -186,7 +186,7 @@ func ReadFullObject(client objectstorage.ObjectStorageClient, namespace string, 
 	// Get the object
 	getRequest := objectstorage.GetObjectRequest{
 		NamespaceName: &namespace,
-		BucketName:    common.String(bucketName),
+		BucketName:    common.String(utils.BucketName),
 		ObjectName:    common.String(fmt.Sprintf("%s/env-files/.%s", project, fileName)),
 	}
 
@@ -218,9 +218,9 @@ func ReadFullObject(client objectstorage.ObjectStorageClient, namespace string, 
 
 func init() {
 	rootCmd.AddCommand(getCmd)
-	validTypesStr := strings.Join(validTypes, ", ")
-	validProjectsStr := strings.Join(validProjects, ", ")
-	validProjectEnvsStr := strings.Join(validEnvs, ", ")
+	validTypesStr := strings.Join(utils.ValidTypes, ", ")
+	validProjectsStr := strings.Join(utils.ValidProjects, ", ")
+	validProjectEnvsStr := strings.Join(utils.ValidEnvs, ", ")
 
 	getCmd.Flags().BoolP("get-all", "A", false, "List all environment variables")
 	getCmd.Flags().StringP("type", "t", "envs", fmt.Sprintf("Specify the environment variable type (options: %s)", validTypesStr))

@@ -61,11 +61,11 @@ func IniToString(iniFile *ini.File) (string, error) {
 }
 
 // GetEnvsFileAsIni reads an environment file from OCI Object Storage and returns it as an ini.File
-func GetEnvsFileAsIni(project string, fileName string, client objectstorage.ObjectStorageClient, namespace string, bucketName string) (*ini.File, error) {
+func GetEnvsFileAsIni(project string, fileName string, client objectstorage.ObjectStorageClient, namespace string, BucketName string) (*ini.File, error) {
 	// Get the object
 	getRequest := objectstorage.GetObjectRequest{
 		NamespaceName: &namespace,
-		BucketName:    common.String(bucketName),
+		BucketName:    common.String(BucketName),
 		ObjectName:    common.String(fmt.Sprintf("%s/env-files/.%s", project, fileName)),
 	}
 
@@ -151,8 +151,8 @@ func GetConfigProviderAWS() (aws.Config, string, error) {
 }
 
 // GetCloudProvider returns the cloud provider for a given project
-func GetCloudProvider(project string, projectProviders []ProjectProvider) []string {
-	for _, provider := range projectProviders {
+func GetCloudProvider(project string, ProjectProviders []ProjectProvider) []string {
+	for _, provider := range ProjectProviders {
 		if provider.Name == project {
 			return provider.CloudProvider
 		}
@@ -175,19 +175,23 @@ func CastDGOProjectName(projectName string) string {
 }
 
 // Cast the project environment to a valid branch name for AWS Amplify
-func CastBranchName(branchName string) string {
+func CastBranchName(branchName string, projectName string) string {
 	switch branchName {
 	case "dev":
 		return "development"
 	case "prod":
-		return "production"
+		if projectName == "app-admin-collection-v2" {
+			return "master"
+		} else {
+			return "production"
+		}
 	default:
 		return branchName
 	}
 }
 
 // SaveEnvFile cast a ini.File to a string and saves it in OCI Object Storage
-func SaveEnvFile(client objectstorage.ObjectStorageClient, namespace string, project string, fileName string, envFile *ini.File, bucketName string) {
+func SaveEnvFile(client objectstorage.ObjectStorageClient, namespace string, project string, fileName string, envFile *ini.File, BucketName string) {
 	envFileContent, err := IniToString(envFile)
 	if err != nil {
 		fmt.Println("Error converting file to string: ", err)
@@ -197,7 +201,7 @@ func SaveEnvFile(client objectstorage.ObjectStorageClient, namespace string, pro
 	// Save file
 	saveRequest := objectstorage.PutObjectRequest{
 		NamespaceName: &namespace,
-		BucketName:    common.String(bucketName),
+		BucketName:    common.String(BucketName),
 		ObjectName:    common.String(fmt.Sprintf("%s/env-files/.%s", project, fileName)),
 		PutObjectBody: io.NopCloser(strings.NewReader(envFileContent)),
 	}
@@ -481,6 +485,40 @@ func GetDGOEnvsAsIni(appEnvs []*godo.AppVariableDefinition) *ini.File {
 	return envsAsIni
 }
 
+// UpdateDGOApp updates environment variables in a DGO App
+func UpdateDGOApp(client *godo.Client, project string, dgoApp *godo.App, updateFunc func(*godo.AppStaticSiteSpec) (bool, error)) error {
+	isSaved := false
+	var err error
+	err = godo.ForEachAppSpecComponent(dgoApp.Spec, func(component *godo.AppStaticSiteSpec) error {
+		if StringInSlice(component.Name, ValidAppComponents) {
+			isSaved, err = updateFunc(component)
+			if err != nil {
+				return err
+			}
+			if isSaved {
+				return nil
+			}
+		}
+		return nil
+	})
+
+	if err != nil {
+		return fmt.Errorf("error updating app components: %w", err)
+	}
+
+	if isSaved {
+		_, _, err = client.Apps.Update(context.TODO(), dgoApp.ID, &godo.AppUpdateRequest{
+			Spec: dgoApp.Spec,
+		})
+	}
+
+	if err != nil {
+		return fmt.Errorf("error updating app: %w", err)
+	}
+
+	return nil
+}
+
 // DeleteFromFile deletes environment variables in a ini.File
 func DeleteEnvironmentVariables(envFile *ini.File, envNames []string) bool {
 	isSaved := false
@@ -494,6 +532,20 @@ func DeleteEnvironmentVariables(envFile *ini.File, envNames []string) bool {
 		isSaved = true
 	}
 	return isSaved
+}
+
+// GetDGOEnvsFromIni converts an ini.File to a slice of AppVariableDefinition
+func GetDGOEnvsFromIni(envsAsIni *ini.File) []*godo.AppVariableDefinition {
+	var appEnvs []*godo.AppVariableDefinition
+
+	for _, key := range envsAsIni.Section("").Keys() {
+		appEnvs = append(appEnvs, &godo.AppVariableDefinition{
+			Key:   key.Name(),
+			Value: key.Value(),
+		})
+	}
+
+	return appEnvs
 }
 
 // CreateEnvironmentVariables creates environment variables in a ini.File

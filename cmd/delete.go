@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/amplify"
+	"github.com/digitalocean/godo"
 	"github.com/oracle/oci-go-sdk/example/helpers"
 	"github.com/oracle/oci-go-sdk/v49/objectstorage"
 	"github.com/spf13/cobra"
@@ -40,17 +41,17 @@ flag is ignored. The file should be in INI format WITH keys and values, even tho
 		return nil
 	},
 	Run: func(cmd *cobra.Command, args []string) {
-		project, err := utils.GetFlagString(cmd, "project", validProjects)
+		project, err := utils.GetFlagString(cmd, "project", utils.ValidProjects)
 		if err != nil {
 			log.Fatalf("Error: %v", err)
 		}
 
-		envType, err := utils.GetFlagString(cmd, "type", validTypes)
+		envType, err := utils.GetFlagString(cmd, "type", utils.ValidTypes)
 		if err != nil {
 			log.Fatalf("Error: %v", err)
 		}
 
-		projEnvironment, err := utils.GetFlagString(cmd, "environment", validEnvs)
+		projEnvironment, err := utils.GetFlagString(cmd, "environment", utils.ValidEnvs)
 		if err != nil {
 			log.Fatalf("Error: %v", err)
 		}
@@ -65,7 +66,7 @@ flag is ignored. The file should be in INI format WITH keys and values, even tho
 			log.Fatalf("Error reading option flag: %v", err)
 		}
 
-		cloudProvider := utils.GetCloudProvider(project, projectProviders)
+		cloudProvider := utils.GetCloudProvider(project, utils.ProjectProviders)
 
 		if utils.StringInSlice("OCI", cloudProvider) {
 			fileName := fmt.Sprintf("%s_%s", projEnvironment, envType)
@@ -101,9 +102,16 @@ flag is ignored. The file should be in INI format WITH keys and values, even tho
 				DeleteFromArgs(client, namespace, project, projEnvironment, envType, args, fileName, isQuiet)
 			}
 		} else if utils.StringInSlice("DGO", cloudProvider) && projEnvironment == "prod" {
-			fmt.Println("DGO")
+			client, err := utils.GetClientDGO()
+			if err != nil {
+				fmt.Println("Error getting client: ", err)
+				return
+			}
+
+			DeleteDGOEnv(client, project, filePath, args, isQuiet)
+
 		} else if utils.StringInSlice("AWS", cloudProvider) {
-			projEnvironment = utils.CastBranchName(projEnvironment)
+			projEnvironment = utils.CastBranchName(projEnvironment, project)
 			configProvider, _, err := utils.GetConfigProviderAWS()
 			if err != nil {
 				fmt.Println("Error getting config provider: ", err)
@@ -117,9 +125,52 @@ flag is ignored. The file should be in INI format WITH keys and values, even tho
 	},
 }
 
+func DeleteDGOEnv(client *godo.Client, project string, filePath string, envNames []string, isQuiet bool) {
+	dgoApp := utils.GetDGOApp(client, project)
+	isSaved := false
+
+	deleteEnvs := func(component *godo.AppStaticSiteSpec) (bool, error) {
+		envsAsIni := utils.GetDGOEnvsAsIni(component.Envs)
+
+		if filePath == "" {
+			isSaved = utils.DeleteEnvironmentVariables(envsAsIni, envNames)
+		} else {
+			userEnvFile, err := ini.Load(filePath)
+			if err != nil {
+				fmt.Println("Error loading file: ", err)
+				if _, err := os.Stat(filePath); err == nil {
+					fmt.Println("Are you sure the file are in INI format (<key>=<value>)?")
+				}
+				return false, nil
+			}
+
+			isSaved = utils.DeleteEnvironmentVariables(envsAsIni, userEnvFile.Section("").KeyStrings())
+		}
+
+		if isSaved {
+			component.Envs = utils.GetDGOEnvsFromIni(envsAsIni)
+		}
+
+		return isSaved, nil
+	}
+
+	if isQuiet || utils.GetUserPermission("Are you sure you want to delete the environment variables?") {
+		err := utils.UpdateDGOApp(client, project, dgoApp, deleteEnvs)
+		if err != nil {
+			fmt.Println("Error updating app: ", err)
+			return
+		}
+
+		if isSaved {
+			fmt.Printf("Environment variables deleted in project \"%s\" in \"prod\" environment\n", project)
+		}
+	}
+
+}
+
 func ConfirmAndSave(client objectstorage.ObjectStorageClient, namespace, project, fileName, projEnvironment string, envFile *ini.File, isQuiet bool) {
 	if isQuiet || utils.GetUserPermission("Are you sure you want to delete the environment variables?") {
-		utils.SaveEnvFile(client, namespace, project, fileName, envFile, bucketName)
+		utils.SaveEnvFile(client, namespace, project, fileName, envFile, utils.BucketName)
 		fmt.Printf("Environment variables deleted in project \"%s\" in \"%s\" environment\n", project, projEnvironment)
 	}
 }
@@ -127,7 +178,7 @@ func ConfirmAndSave(client objectstorage.ObjectStorageClient, namespace, project
 func DeleteFromArgs(client objectstorage.ObjectStorageClient, namespace, project, projEnvironment, envType string, envNames []string, fileName string, isQuiet bool) {
 	fmt.Println("Deleting from args")
 
-	envFile, err := utils.GetEnvsFileAsIni(project, fileName, client, namespace, bucketName)
+	envFile, err := utils.GetEnvsFileAsIni(project, fileName, client, namespace, utils.BucketName)
 	if err != nil {
 		fmt.Println("Error getting environment file: ", err)
 		return
@@ -148,7 +199,7 @@ func DeleteFromFile(client objectstorage.ObjectStorageClient, namespace, project
 		return
 	}
 
-	envFile, err := utils.GetEnvsFileAsIni(project, fileName, client, namespace, bucketName)
+	envFile, err := utils.GetEnvsFileAsIni(project, fileName, client, namespace, utils.BucketName)
 
 	if err != nil {
 		fmt.Println("Error loading file: ", err)
@@ -163,9 +214,9 @@ func DeleteFromFile(client objectstorage.ObjectStorageClient, namespace, project
 func init() {
 	rootCmd.AddCommand(deleteCmd)
 
-	validTypesStr := strings.Join(validTypes, ", ")
-	validProjectsStr := strings.Join(validProjects, ", ")
-	validProjectEnvsStr := strings.Join(validEnvs, ", ")
+	validTypesStr := strings.Join(utils.ValidTypes, ", ")
+	validProjectsStr := strings.Join(utils.ValidProjects, ", ")
+	validProjectEnvsStr := strings.Join(utils.ValidEnvs, ", ")
 
 	deleteCmd.Flags().StringP("type", "t", "envs", fmt.Sprintf("Specify the environment variable type (options: %s)", validTypesStr))
 	deleteCmd.Flags().StringP("project", "p", "", fmt.Sprintf("Specify the project name (options: %s)", validProjectsStr))

@@ -4,7 +4,6 @@ Copyright © 2024 NAME HERE <EMAIL ADDRESS>
 package cmd
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"strings"
@@ -53,17 +52,17 @@ update command to update an existing environment variable or secret.`,
 		return nil
 	},
 	Run: func(cmd *cobra.Command, args []string) {
-		project, err := utils.GetFlagString(cmd, "project", validProjects)
+		project, err := utils.GetFlagString(cmd, "project", utils.ValidProjects)
 		if err != nil {
 			log.Fatalf("Error: %v", err)
 		}
 
-		envType, err := utils.GetFlagString(cmd, "type", validTypes)
+		envType, err := utils.GetFlagString(cmd, "type", utils.ValidTypes)
 		if err != nil {
 			log.Fatalf("Error: %v", err)
 		}
 
-		projEnvironment, err := utils.GetFlagString(cmd, "environment", validEnvs)
+		projEnvironment, err := utils.GetFlagString(cmd, "environment", utils.ValidEnvs)
 		if err != nil {
 			log.Fatalf("Error: %v", err)
 		}
@@ -83,7 +82,7 @@ update command to update an existing environment variable or secret.`,
 			log.Fatalf("Error reading option flag: %v", err)
 		}
 
-		cloudProvider := utils.GetCloudProvider(project, projectProviders)
+		cloudProvider := utils.GetCloudProvider(project, utils.ProjectProviders)
 
 		if utils.StringInSlice("OCI", cloudProvider) {
 			fileName := fmt.Sprintf("%s_%s", projEnvironment, envType)
@@ -127,7 +126,7 @@ update command to update an existing environment variable or secret.`,
 
 			CreateDGOEnv(client, project, projEnvironment, filePath, envName, envValue)
 		} else if utils.StringInSlice("AWS", cloudProvider) {
-			projEnvironment = utils.CastBranchName(projEnvironment)
+			projEnvironment = utils.CastBranchName(projEnvironment, project)
 			configProvider, _, err := utils.GetConfigProviderAWS()
 			if err != nil {
 				fmt.Println("Error getting config provider: ", err)
@@ -144,62 +143,42 @@ update command to update an existing environment variable or secret.`,
 func CreateDGOEnv(client *godo.Client, project string, projEnvironment string, filePath string, envName string, envValue string) {
 	dgoApp := utils.GetDGOApp(client, project)
 	isSaved := false
-	createEnvs := func(component *godo.AppStaticSiteSpec) error {
+
+	createEnvs := func(component *godo.AppStaticSiteSpec) (bool, error) {
 		envsAsIni := utils.GetDGOEnvsAsIni(component.Envs)
 
 		if filePath == "" {
 			if envsAsIni.Section("").HasKey(envName) {
 				fmt.Printf("[WARNING] Environment variable \"%s\" already exists in project \"%s\" in \"%s\" environment\n", envName, project, projEnvironment)
-				return nil
+				return false, nil
 			}
 
-			component.Envs = append(component.Envs, &godo.AppVariableDefinition{
-				Key:   envName,
-				Value: envValue,
-			})
-
+			envsAsIni.Section("").Key(envName).SetValue(envValue)
 			isSaved = true
 		} else {
 			userEnvFile, err := ini.Load(filePath)
 			if err != nil {
 				fmt.Println("Error loading file: ", err)
-				return nil
+				return false, err
 			}
 
-			for _, key := range userEnvFile.Section("").Keys() {
-				if envsAsIni.Section("").HasKey(key.Name()) {
-					fmt.Printf("[WARNING] Environment variable \"%s\" already exists in project \"%s\" in \"%s\" environment\n", key.Name(), project, projEnvironment)
-					continue
-				}
-
-				component.Envs = append(component.Envs, &godo.AppVariableDefinition{
-					Key:   key.Name(),
-					Value: key.Value(),
-				})
-				isSaved = true
-
-			}
+			isSaved = utils.CreateEnvironmentVariables(envsAsIni, userEnvFile)
 		}
-		return nil
+
+		if isSaved {
+			component.Envs = utils.GetDGOEnvsFromIni(envsAsIni)
+		}
+
+		return isSaved, nil
 	}
 
-	err := godo.ForEachAppSpecComponent(dgoApp.Spec, func(component *godo.AppStaticSiteSpec) error {
-		return createEnvs(component)
-	})
-
+	err := utils.UpdateDGOApp(client, project, dgoApp, createEnvs)
 	if err != nil {
-		log.Fatalf("Error updating app components: %v", err)
+		fmt.Println("Error updating app: ", err)
+		return
 	}
 
 	if isSaved {
-		_, _, err = client.Apps.Update(context.TODO(), dgoApp.ID, &godo.AppUpdateRequest{
-			Spec: dgoApp.Spec,
-		})
-
-		if err != nil {
-			log.Fatalf("Error updating app: %v", err)
-		}
-
 		fmt.Printf("Environment variables saved in project \"%s\" in \"%s\" environment\n", project, projEnvironment)
 	}
 }
@@ -211,7 +190,7 @@ func CreateEnvFromFile(client objectstorage.ObjectStorageClient, namespace strin
 		return
 	}
 
-	envFile, err := utils.GetEnvsFileAsIni(project, fileName, client, namespace, bucketName)
+	envFile, err := utils.GetEnvsFileAsIni(project, fileName, client, namespace, utils.BucketName)
 
 	if err != nil {
 		fmt.Println("Error loading file: ", err)
@@ -219,13 +198,13 @@ func CreateEnvFromFile(client objectstorage.ObjectStorageClient, namespace strin
 	}
 
 	if utils.CreateEnvironmentVariables(envFile, userEnvFile) {
-		utils.SaveEnvFile(client, namespace, project, fileName, envFile, bucketName)
+		utils.SaveEnvFile(client, namespace, project, fileName, envFile, utils.BucketName)
 		fmt.Printf("Environment variables saved in project \"%s\" in \"%s\" environment\n", project, projEnvironment)
 	}
 }
 
 func CreateSingleEnv(client objectstorage.ObjectStorageClient, namespace string, project string, projEnvironment string, envType string, envName string, envValue string, fileName string) {
-	envFile, err := utils.GetEnvsFileAsIni(project, fileName, client, namespace, bucketName)
+	envFile, err := utils.GetEnvsFileAsIni(project, fileName, client, namespace, utils.BucketName)
 
 	if err != nil {
 		fmt.Println("Error loading file: ", err)
@@ -238,16 +217,16 @@ func CreateSingleEnv(client objectstorage.ObjectStorageClient, namespace string,
 	}
 
 	envFile.Section("").Key(envName).SetValue(envValue)
-	utils.SaveEnvFile(client, namespace, project, fileName, envFile, bucketName)
+	utils.SaveEnvFile(client, namespace, project, fileName, envFile, utils.BucketName)
 	fmt.Printf("Environment variables saved in project \"%s\" in \"%s\" environment\n", project, projEnvironment)
 }
 
 func init() {
 	rootCmd.AddCommand(createCmd)
 
-	validTypesStr := strings.Join(validTypes, ", ")
-	validProjectsStr := strings.Join(validProjects, ", ")
-	validProjectEnvsStr := strings.Join(validEnvs, ", ")
+	validTypesStr := strings.Join(utils.ValidTypes, ", ")
+	validProjectsStr := strings.Join(utils.ValidProjects, ", ")
+	validProjectEnvsStr := strings.Join(utils.ValidEnvs, ", ")
 
 	createCmd.Flags().StringP("type", "t", "envs", fmt.Sprintf("Specify the environment variable type (options: %s)", validTypesStr))
 	createCmd.Flags().StringP("project", "p", "", fmt.Sprintf("Specify the project name (options: %s)", validProjectsStr))
