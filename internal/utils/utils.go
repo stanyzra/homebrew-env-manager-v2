@@ -51,13 +51,17 @@ func IniToString(iniFile *ini.File) (string, error) {
 
 	var result []string
 	for _, line := range strings.Split(iniString, "\n") {
-		// Removendo espaços em branco ao redor dos '='
-		result = append(result, strings.ReplaceAll(line, " ", ""))
+		if strings.TrimSpace(line) != "" {
+			// Remove extra spaces around '='
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) == 2 {
+				result = append(result, strings.TrimSpace(parts[0])+"="+strings.TrimSpace(parts[1]))
+			}
+		}
 	}
 	finalString := strings.Join(result, "\n")
 
 	return finalString, nil
-
 }
 
 // GetEnvsFileAsIni reads an environment file from OCI Object Storage and returns it as an ini.File
