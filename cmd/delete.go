@@ -223,7 +223,7 @@ func init() {
 
 	validTypesStr := strings.Join(utils.ValidTypes, ", ")
 	validProjectsStr := strings.Join(utils.ValidProjects, ", ")
-	validProjectEnvsStr := strings.Join(utils.ValidEnvs, ", ")
+	validProjectEnvsStr := strings.Join(append(utils.ValidEnvs, "all"), ", ")
 
 	deleteCmd.Flags().StringP("type", "t", "envs", fmt.Sprintf("Specify the environment variable type (options: %s)", validTypesStr))
 	deleteCmd.Flags().StringP("project", "p", "", fmt.Sprintf("Specify the project name (options: %s)", validProjectsStr))
