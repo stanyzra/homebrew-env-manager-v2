@@ -47,17 +47,17 @@ variable names in the arguments.`,
 		return nil
 	},
 	Run: func(cmd *cobra.Command, args []string) {
-		project, err := utils.GetFlagString(cmd, "project", utils.ValidProjects)
+		project, err := utils.GetFlagString(cmd, "project", utils.ValidProjects, false)
 		if err != nil {
 			log.Fatalf("Error: %v", err)
 		}
 
-		envType, err := utils.GetFlagString(cmd, "type", utils.ValidTypes)
+		envType, err := utils.GetFlagString(cmd, "type", utils.ValidTypes, false)
 		if err != nil {
 			log.Fatalf("Error: %v", err)
 		}
 
-		projEnvironment, err := utils.GetFlagString(cmd, "environment", utils.ValidEnvs)
+		projEnvironment, err := utils.GetFlagString(cmd, "environment", utils.ValidEnvs, false)
 		if err != nil {
 			log.Fatalf("Error: %v", err)
 		}
