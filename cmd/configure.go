@@ -37,6 +37,7 @@ var configureCmd = &cobra.Command{
 		userChoice, err := strconv.Atoi(input)
 		if err != nil {
 			fmt.Println("Error converting input to integer")
+			return
 		}
 
 		ManageCloudProvider(userChoice - 1)
