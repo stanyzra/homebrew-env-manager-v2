@@ -41,17 +41,17 @@ flag is ignored. The file should be in INI format WITH keys and values, even tho
 		return nil
 	},
 	Run: func(cmd *cobra.Command, args []string) {
-		project, err := utils.GetFlagString(cmd, "project", utils.ValidProjects)
+		project, err := utils.GetFlagString(cmd, "project", utils.ValidProjects, false)
 		if err != nil {
 			log.Fatalf("Error: %v", err)
 		}
 
-		envType, err := utils.GetFlagString(cmd, "type", utils.ValidTypes)
+		envType, err := utils.GetFlagString(cmd, "type", utils.ValidTypes, false)
 		if err != nil {
 			log.Fatalf("Error: %v", err)
 		}
 
-		projEnvironment, err := utils.GetFlagString(cmd, "environment", utils.ValidEnvs)
+		projEnvironment, err := utils.GetFlagString(cmd, "environment", utils.ValidEnvs, true)
 		if err != nil {
 			log.Fatalf("Error: %v", err)
 		}
@@ -68,60 +68,67 @@ flag is ignored. The file should be in INI format WITH keys and values, even tho
 
 		cloudProvider := utils.GetCloudProvider(project, utils.ProjectProviders)
 
-		if utils.StringInSlice("OCI", cloudProvider) {
-			fileName := fmt.Sprintf("%s_%s", projEnvironment, envType)
+		projEnvironmentList := []string{projEnvironment}
 
-			configProvider, configFileName, err := utils.GetConfigProviderOCI()
-
-			if err != nil {
-				fmt.Println("Error getting config provider: ", err)
-				return
-			}
-
-			ini_config, err := ini.Load(configFileName)
-			if err != nil {
-				fmt.Println("Error loading config file: ", err)
-				return
-			}
-
-			sec := ini_config.Section("OCI")
-			namespace := sec.Key("namespace").String()
-
-			if err != nil {
-				fmt.Println("Error getting config provider: ", err)
-				return
-			}
-
-			client, err := objectstorage.NewObjectStorageClientWithConfigurationProvider(configProvider)
-			helpers.FatalIfError(err)
-
-			if filePath != "" {
-				fmt.Printf("Deleting from file: %s\n", filePath)
-				DeleteFromFile(client, namespace, project, projEnvironment, envType, filePath, fileName, isQuiet)
-			} else {
-				DeleteFromArgs(client, namespace, project, projEnvironment, envType, args, fileName, isQuiet)
-			}
-		} else if utils.StringInSlice("DGO", cloudProvider) && projEnvironment == "prod" {
-			client, err := utils.GetClientDGO()
-			if err != nil {
-				fmt.Println("Error getting client: ", err)
-				return
-			}
-
-			DeleteDGOEnv(client, project, filePath, args, isQuiet)
-
-		} else if utils.StringInSlice("AWS", cloudProvider) {
-			projEnvironment = utils.CastBranchName(projEnvironment, project)
-			configProvider, _, err := utils.GetConfigProviderAWS()
-			if err != nil {
-				fmt.Println("Error getting config provider: ", err)
-				return
-			}
-
-			client := amplify.NewFromConfig(configProvider)
-			utils.HandleAWS(client, project, projEnvironment, false, filePath, args, "", "", isQuiet, cmd.Name())
+		if projEnvironment == "all" {
+			projEnvironmentList = utils.ValidEnvs
 		}
+		for _, projEnv := range projEnvironmentList {
 
+			if utils.StringInSlice("OCI", cloudProvider) {
+				fileName := fmt.Sprintf("%s_%s", projEnv, envType)
+
+				configProvider, configFileName, err := utils.GetConfigProviderOCI()
+
+				if err != nil {
+					fmt.Println("Error getting config provider: ", err)
+					return
+				}
+
+				ini_config, err := ini.Load(configFileName)
+				if err != nil {
+					fmt.Println("Error loading config file: ", err)
+					return
+				}
+
+				sec := ini_config.Section("OCI")
+				namespace := sec.Key("namespace").String()
+
+				if err != nil {
+					fmt.Println("Error getting config provider: ", err)
+					return
+				}
+
+				client, err := objectstorage.NewObjectStorageClientWithConfigurationProvider(configProvider)
+				helpers.FatalIfError(err)
+
+				if filePath != "" {
+					fmt.Printf("Deleting from file: %s\n", filePath)
+					DeleteFromFile(client, namespace, project, projEnv, envType, filePath, fileName, isQuiet)
+				} else {
+					DeleteFromArgs(client, namespace, project, projEnv, envType, args, fileName, isQuiet)
+				}
+			} else if utils.StringInSlice("DGO", cloudProvider) && projEnv == "prod" {
+				client, err := utils.GetClientDGO()
+				if err != nil {
+					fmt.Println("Error getting client: ", err)
+					return
+				}
+
+				DeleteDGOEnv(client, project, filePath, args, isQuiet)
+
+			} else if utils.StringInSlice("AWS", cloudProvider) {
+				projEnv = utils.CastBranchName(projEnv, project)
+				configProvider, _, err := utils.GetConfigProviderAWS()
+				if err != nil {
+					fmt.Println("Error getting config provider: ", err)
+					return
+				}
+
+				client := amplify.NewFromConfig(configProvider)
+				utils.HandleAWS(client, project, projEnv, false, filePath, args, "", "", isQuiet, cmd.Name())
+			}
+		}
 	},
 }
 

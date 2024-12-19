@@ -94,10 +94,14 @@ func GetEnvsFileAsIni(project string, fileName string, client objectstorage.Obje
 }
 
 // GetFlagString reads and validates a string flag
-func GetFlagString(cmd *cobra.Command, name string, validOptions []string) (string, error) {
+func GetFlagString(cmd *cobra.Command, name string, validOptions []string, isGetAllAvailable bool) (string, error) {
 	value, err := cmd.Flags().GetString(name)
 	if err != nil {
 		return "", fmt.Errorf("error reading --%s flag: %w", name, err)
+	}
+
+	if isGetAllAvailable && value == "all" {
+		return value, nil
 	}
 
 	if !StringInSlice(value, validOptions) {

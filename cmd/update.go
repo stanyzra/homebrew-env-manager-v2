@@ -52,17 +52,17 @@ it will not be created. Use the create command to create a new environment varia
 		return nil
 	},
 	Run: func(cmd *cobra.Command, args []string) {
-		project, err := utils.GetFlagString(cmd, "project", utils.ValidProjects)
+		project, err := utils.GetFlagString(cmd, "project", utils.ValidProjects, false)
 		if err != nil {
 			log.Fatalf("Error: %v", err)
 		}
 
-		envType, err := utils.GetFlagString(cmd, "type", utils.ValidTypes)
+		envType, err := utils.GetFlagString(cmd, "type", utils.ValidTypes, false)
 		if err != nil {
 			log.Fatalf("Error: %v", err)
 		}
 
-		projEnvironment, err := utils.GetFlagString(cmd, "environment", utils.ValidEnvs)
+		projEnvironment, err := utils.GetFlagString(cmd, "environment", utils.ValidEnvs, true)
 		if err != nil {
 			log.Fatalf("Error: %v", err)
 		}
@@ -84,58 +84,67 @@ it will not be created. Use the create command to create a new environment varia
 
 		cloudProvider := utils.GetCloudProvider(project, utils.ProjectProviders)
 
-		if utils.StringInSlice("OCI", cloudProvider) {
-			fileName := fmt.Sprintf("%s_%s", projEnvironment, envType)
+		projEnvironmentList := []string{projEnvironment}
 
-			configProvider, configFileName, err := utils.GetConfigProviderOCI()
+		if projEnvironment == "all" {
+			projEnvironmentList = utils.ValidEnvs
+		}
+		for _, projEnv := range projEnvironmentList {
+			if utils.StringInSlice("OCI", cloudProvider) {
 
-			if err != nil {
-				fmt.Println("Error getting config provider: ", err)
-				return
+				fileName := fmt.Sprintf("%s_%s", projEnv, envType)
+
+				configProvider, configFileName, err := utils.GetConfigProviderOCI()
+
+				if err != nil {
+					fmt.Println("Error getting config provider: ", err)
+					return
+				}
+
+				ini_config, err := ini.Load(configFileName)
+				if err != nil {
+					fmt.Println("Error loading config file: ", err)
+					return
+				}
+
+				sec := ini_config.Section("OCI")
+				namespace := sec.Key("namespace").String()
+
+				if err != nil {
+					fmt.Println("Error getting config provider: ", err)
+					return
+				}
+
+				client, err := objectstorage.NewObjectStorageClientWithConfigurationProvider(configProvider)
+				helpers.FatalIfError(err)
+
+				if filePath != "" {
+					UpdateEnvFromFile(client, namespace, project, projEnv, envType, fileName, filePath)
+				} else {
+
+					UpdateSingleEnv(client, namespace, project, projEnv, envType, envName, envValue, fileName)
+				}
+
+			} else if utils.StringInSlice("DGO", cloudProvider) && projEnv == "prod" {
+				client, err := utils.GetClientDGO()
+				if err != nil {
+					fmt.Println("Error getting client: ", err)
+					return
+				}
+
+				UpdateDGOEnv(client, project, filePath, projEnv, envName, envValue)
+
+			} else if utils.StringInSlice("AWS", cloudProvider) {
+				projEnv = utils.CastBranchName(projEnv, project)
+				configProvider, _, err := utils.GetConfigProviderAWS()
+				if err != nil {
+					fmt.Println("Error getting config provider: ", err)
+					return
+				}
+
+				client := amplify.NewFromConfig(configProvider)
+				utils.HandleAWS(client, project, projEnv, false, filePath, args, envName, envValue, false, cmd.Name())
 			}
-
-			ini_config, err := ini.Load(configFileName)
-			if err != nil {
-				fmt.Println("Error loading config file: ", err)
-				return
-			}
-
-			sec := ini_config.Section("OCI")
-			namespace := sec.Key("namespace").String()
-
-			if err != nil {
-				fmt.Println("Error getting config provider: ", err)
-				return
-			}
-
-			client, err := objectstorage.NewObjectStorageClientWithConfigurationProvider(configProvider)
-			helpers.FatalIfError(err)
-
-			if filePath != "" {
-				UpdateEnvFromFile(client, namespace, project, projEnvironment, envType, fileName, filePath)
-			} else {
-
-				UpdateSingleEnv(client, namespace, project, projEnvironment, envType, envName, envValue, fileName)
-			}
-		} else if utils.StringInSlice("DGO", cloudProvider) && projEnvironment == "prod" {
-			client, err := utils.GetClientDGO()
-			if err != nil {
-				fmt.Println("Error getting client: ", err)
-				return
-			}
-
-			UpdateDGOEnv(client, project, filePath, projEnvironment, envName, envValue)
-
-		} else if utils.StringInSlice("AWS", cloudProvider) {
-			projEnvironment = utils.CastBranchName(projEnvironment, project)
-			configProvider, _, err := utils.GetConfigProviderAWS()
-			if err != nil {
-				fmt.Println("Error getting config provider: ", err)
-				return
-			}
-
-			client := amplify.NewFromConfig(configProvider)
-			utils.HandleAWS(client, project, projEnvironment, false, filePath, args, envName, envValue, false, cmd.Name())
 		}
 	},
 }
@@ -241,7 +250,7 @@ func init() {
 
 	validTypesStr := strings.Join(utils.ValidTypes, ", ")
 	validProjectsStr := strings.Join(utils.ValidProjects, ", ")
-	validProjectEnvsStr := strings.Join(utils.ValidEnvs, ", ")
+	validProjectEnvsStr := strings.Join(append(utils.ValidEnvs, "all"), ", ")
 
 	updateCmd.Flags().StringP("type", "t", "envs", fmt.Sprintf("Specify the environment variable type (options: %s)", validTypesStr))
 	updateCmd.Flags().StringP("project", "p", "", fmt.Sprintf("Specify the project name (options: %s)", validProjectsStr))
