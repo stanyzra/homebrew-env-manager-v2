@@ -191,7 +191,7 @@ func CastBranchName(branchName string, projectName string) string {
 		if projectName == "app-admin-collection-v2" {
 			return "master"
 		} else {
-			return "production"
+			return "main"
 		}
 	default:
 		return branchName
