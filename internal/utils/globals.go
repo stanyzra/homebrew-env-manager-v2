@@ -13,9 +13,10 @@ var ProjectProviders = []ProjectProvider{
 	{Name: `app-biblioteca-collection-v2`, CloudProvider: []string{"AWS", "DGO"}},
 	{Name: "collection-front-end-v2.1", CloudProvider: []string{"AWS", "DGO"}},
 	{Name: "app-admin-collection-v2", CloudProvider: []string{"AWS"}},
+	{Name: "app-parceiros-collection-v2", CloudProvider: []string{"AWS"}},
 }
 
-var ValidProjects = []string{"collection-back-end-v2.1", "gollection-elastic", "app-memorial-collection-v2", "app-admin-collection-v2", "collection-front-end-v2.1", "app-biblioteca-collection-v2"}
+var ValidProjects = []string{"collection-back-end-v2.1", "gollection-elastic", "app-memorial-collection-v2", "app-admin-collection-v2", "collection-front-end-v2.1", "app-biblioteca-collection-v2", "app-parceiros-collection-v2"}
 var ValidEnvs = []string{"prod", "beta", "homolog", "dev"}
 var ValidAppComponents = []string{"collection-memorial-white-screen", "service", "collection-home-white-screen"}
 

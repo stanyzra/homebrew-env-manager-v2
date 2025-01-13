@@ -16,6 +16,6 @@ class HomebrewEnvManagerV2 < Formula
   end
 
   test do
-    assert_match "1.1.0", shell_output("#{bin}/env-manager-v2 --version")
+    assert_match "1.2.0", shell_output("#{bin}/env-manager-v2 --version")
   end
 end
