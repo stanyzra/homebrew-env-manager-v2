@@ -1,5 +1,5 @@
 /*
-Copyright © 2024 Stany Helberty stanyhelberth@gmail.com
+Copyright © 2025 Stany Helberth stanyhelberth@gmail.com
 */
 
 package utils
@@ -12,6 +12,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -26,6 +27,9 @@ import (
 	"github.com/oracle/oci-go-sdk/v49/objectstorage"
 	"github.com/spf13/cobra"
 	"gopkg.in/ini.v1"
+
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 )
 
 // StringInSlice checks if a string is in a slice of strings
@@ -158,6 +162,72 @@ func GetConfigProviderAWS() (aws.Config, string, error) {
 	return configProvider, configFileName, nil
 }
 
+// GetK8sClient returns a Clientset for Kubernetes
+func GetK8sClient() (*kubernetes.Clientset, error) {
+	userHome, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user home directory: %w", err)
+	}
+
+	configFilePath := filepath.Join(userHome, ".env-manager/config")
+	configFile, err := ini.Load(configFilePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load config file: %w", err)
+	}
+
+	k8sConfigSection, err := configFile.GetSection("K8S")
+
+	if k8sConfigSection == nil && err != nil {
+		return nil, fmt.Errorf("K8S config section is empty or does not exist. Please configure it before using \"-k\" flag")
+	} else if err != nil {
+		return nil, fmt.Errorf("failed to get K8S config section: %w", err)
+	}
+
+	k8sConfig := &rest.Config{
+		Host: k8sConfigSection.Key("k8s_host").String(),
+		TLSClientConfig: rest.TLSClientConfig{
+			CAFile: k8sConfigSection.Key("k8s_certificate_path").String(),
+		},
+		BearerToken: k8sConfigSection.Key("k8s_token").String(),
+	}
+
+	clientset, err := kubernetes.NewForConfig(k8sConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Kubernetes client: %w", err)
+	}
+
+	return clientset, nil
+}
+
+func GetK8sResourceDataParams(k8sClient *kubernetes.Clientset, project string, projEnvironment string, envType string) (KubernetesResourceManager, string) {
+	// k8sNamespace, err := GetConfigProperty(project, projEnvironment, "namespace")
+	k8sNamespace, err := GetConfigProperty("\""+project+"\"", projEnvironment+".namespace")
+
+	if err != nil {
+		fmt.Println("Error getting namespace: ", err)
+		return nil, ""
+	}
+
+	var resourceName string
+	var manager KubernetesResourceManager
+
+	if envType == "envs" {
+		manager = &ConfigMapManager{Client: k8sClient, Namespace: k8sNamespace}
+		// resourceName, err = GetConfigProperty(project, projEnvironment, "configmap_name")
+		resourceName, err = GetConfigProperty("\""+project+"\"", projEnvironment+".configmap_name")
+	} else {
+		manager = &SecretManager{Client: k8sClient, Namespace: k8sNamespace}
+		// resourceName, err = GetConfigProperty(project, projEnvironment, "secret_name")
+		resourceName, err = GetConfigProperty("\""+project+"\"", projEnvironment+".secret_name")
+	}
+
+	if err != nil {
+		log.Fatalf("Error getting resource name: %v", err)
+	}
+
+	return manager, resourceName
+}
+
 // GetCloudProvider returns the cloud provider for a given project
 func GetCloudProvider(project string, ProjectProviders []ProjectProvider) []string {
 	for _, provider := range ProjectProviders {
@@ -166,36 +236,6 @@ func GetCloudProvider(project string, ProjectProviders []ProjectProvider) []stri
 		}
 	}
 	return nil
-}
-
-// Cast the project name to a valid name for DGO AppPlatform
-func CastDGOProjectName(projectName string) string {
-	switch projectName {
-	case "app-memorial-collection-v2":
-		return "collection-memorial-app"
-	case "collection-front-end-v2.1":
-		return "collection-home-app"
-	case "app-biblioteca-collection-v2":
-		return "collection-library-app"
-	default:
-		return projectName
-	}
-}
-
-// Cast the project environment to a valid branch name for AWS Amplify
-func CastBranchName(branchName string, projectName string) string {
-	switch branchName {
-	case "dev":
-		return "development"
-	case "prod":
-		if projectName == "app-admin-collection-v2" {
-			return "master"
-		} else {
-			return "main"
-		}
-	default:
-		return branchName
-	}
 }
 
 // SaveEnvFile cast a ini.File to a string and saves it in OCI Object Storage
@@ -285,6 +325,38 @@ func HandleAWS(client *amplify.Client, project, projEnvironment string, isGetAll
 	}
 }
 
+// GetConfigFileName returns the path to the config file
+func GetConfigFileName() string {
+	userHome, err := os.UserHomeDir()
+	if err != nil {
+		log.Fatalf("Error getting user home directory: %v", err)
+	}
+
+	configFileName := fmt.Sprintf("%s/%s", userHome, ".env-manager/config")
+
+	// Check if config file exists
+	if _, err := os.Stat(configFileName); os.IsNotExist(err) {
+		log.Fatalf("Config file not found. Make sure you have run the configure command or created the file manually")
+	}
+
+	return configFileName
+}
+
+func GetConfigProperty(sectionName string, property string) (string, error) {
+	configFileName := GetConfigFileName()
+
+	cfg, err := ini.Load(configFileName)
+	if err != nil {
+		log.Fatalf("Error loading config file: %v", err)
+	}
+
+	if !cfg.Section(sectionName).HasKey(property) {
+		return "", fmt.Errorf("property \"%s\" not found in section \"%s\". Check your configuration file", property, sectionName)
+	}
+
+	return cfg.Section(sectionName).Key(property).String(), nil
+}
+
 // GetClientDGO returns a client for DGO
 func GetClientDGO() (*godo.Client, error) {
 	userHome, err := os.UserHomeDir()
@@ -325,7 +397,7 @@ func UpdateAWSEnvs(branchInfos *amplify.GetBranchOutput, client *amplify.Client,
 			return
 		}
 
-		isSaved = UpdateEnvironmentVariables(iniAWS, userEnvFile)
+		isSaved, _ = UpdateEnvironmentVariables(iniAWS, userEnvFile)
 
 	} else {
 		if !iniAWS.Section("").HasKey(envName) {
@@ -374,7 +446,8 @@ func DeleteAWSEnvs(branchInfos *amplify.GetBranchOutput, client *amplify.Client,
 		fmt.Printf("Deleting from file: %s\n", filePath)
 	}
 
-	if DeleteEnvironmentVariables(iniAWS, envNames) {
+	isSaved := DeleteEnvironmentVariables(iniAWS, envNames)
+	if isSaved {
 		if isQuiet || GetUserPermission("Are you sure you want to delete the environment variables?") {
 			_, err := client.UpdateBranch(context.Background(), &amplify.UpdateBranchInput{
 				AppId:                common.String(appId),
@@ -426,7 +499,7 @@ func CreateAWSEnvs(branchInfos *amplify.GetBranchOutput, client *amplify.Client,
 			return
 		}
 
-		isSaved = CreateEnvironmentVariables(iniAWS, userEnvFile)
+		isSaved, _ = CreateEnvironmentVariables(iniAWS, userEnvFile)
 
 	} else {
 		if iniAWS.Section("").HasKey(envName) {
@@ -456,7 +529,6 @@ func CreateAWSEnvs(branchInfos *amplify.GetBranchOutput, client *amplify.Client,
 
 // GetDGOApp gets a DGO App by its project name
 func GetDGOApp(client *godo.Client, project string) *godo.App {
-	castedProject := CastDGOProjectName(project)
 	ctx := context.TODO()
 
 	apps, _, err := client.Apps.List(ctx, nil)
@@ -466,7 +538,7 @@ func GetDGOApp(client *godo.Client, project string) *godo.App {
 
 	var specificApp *godo.App
 	for _, app := range apps {
-		if app.Spec.Name == castedProject {
+		if app.Spec.Name == project {
 			specificApp, _, err = client.Apps.Get(ctx, app.ID)
 			if err != nil {
 				log.Fatalf("Error getting app: %v", err)
@@ -476,7 +548,7 @@ func GetDGOApp(client *godo.Client, project string) *godo.App {
 	}
 
 	if specificApp == nil {
-		log.Fatalf("App with project name %s not found", project)
+		log.Fatalf("App with project name \"%s\" not found", project)
 	}
 
 	return specificApp
@@ -557,11 +629,12 @@ func GetDGOEnvsFromIni(envsAsIni *ini.File) []*godo.AppVariableDefinition {
 }
 
 // CreateEnvironmentVariables creates environment variables in a ini.File
-func CreateEnvironmentVariables(envFile *ini.File, userEnvsFile *ini.File) bool {
+func CreateEnvironmentVariables(envFile *ini.File, userEnvsFile *ini.File) (bool, *ini.File) {
 	isSaved := false
 	for _, key := range userEnvsFile.Section("").Keys() {
 		if envFile.Section("").HasKey(key.Name()) {
 			fmt.Printf("[WARNING] Environment variable \"%s\" already exists\n", key.Name())
+			userEnvsFile.Section("").DeleteKey(key.Name())
 			continue
 		}
 
@@ -569,15 +642,16 @@ func CreateEnvironmentVariables(envFile *ini.File, userEnvsFile *ini.File) bool 
 		envFile.Section("").Key(key.Name()).SetValue(key.Value())
 	}
 
-	return isSaved
+	return isSaved, userEnvsFile
 }
 
-// UpdateEnvironmentVariables updates environment variables in a ini.File
-func UpdateEnvironmentVariables(envFile *ini.File, userEnvsFile *ini.File) bool {
+// UpdateEnvironmentVariables updates the environment variables from the userEnvsFile. Returns true if it's ready to save the file and the updated envFile.
+func UpdateEnvironmentVariables(envFile *ini.File, userEnvsFile *ini.File) (bool, *ini.File) {
 	isSaved := false
 	for _, key := range userEnvsFile.Section("").Keys() {
 		if !envFile.Section("").HasKey(key.Name()) {
 			fmt.Printf("[WARNING] Key \"%s\" not found in environment file\n", key.Name())
+			userEnvsFile.Section("").DeleteKey(key.Name())
 			continue
 		}
 
@@ -585,5 +659,5 @@ func UpdateEnvironmentVariables(envFile *ini.File, userEnvsFile *ini.File) bool 
 		envFile.Section("").Key(key.Name()).SetValue(key.Value())
 	}
 
-	return isSaved
+	return isSaved, userEnvsFile
 }

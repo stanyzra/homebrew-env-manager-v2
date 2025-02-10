@@ -1,0 +1,35 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: <sa_name>
+  namespace: <namespace>
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: <cr_name>
+rules:
+  - apiGroups: [""] # Core API group
+    resources: ["configmaps", "secrets"]
+    verbs: ["get", "list", "delete", "patch", "create", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: <crb_name>
+subjects:
+  - kind: ServiceAccount
+    name: <sa_name>
+    namespace: <namespace>
+roleRef:
+  kind: ClusterRole
+  name: <cr_name>
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: <sa_name>-secret
+  annotations:
+    kubernetes.io/service-account.name: "<sa_name>"
+type: kubernetes.io/service-account-token

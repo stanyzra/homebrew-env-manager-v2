@@ -1,5 +1,5 @@
 /*
-Copyright © 2024 Stany Helberty stanyhelberth@gmail.com
+Copyright © 2025 Stany Helberth stanyhelberth@gmail.com
 */
 package main
 
