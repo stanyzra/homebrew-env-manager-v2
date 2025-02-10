@@ -1,5 +1,5 @@
 /*
-Copyright © 2024 NAME HERE stanyhelberth@gmail.com
+Copyright © 2025 Stany Helberth stanyhelberth@gmail.com
 */
 package cmd
 
@@ -41,6 +41,11 @@ flag is ignored. The file should be in INI format WITH keys and values, even tho
 		return nil
 	},
 	Run: func(cmd *cobra.Command, args []string) {
+		isK8s, err := cmd.Flags().GetBool("k8s")
+		if err != nil {
+			log.Fatalf("Error reading option flag: %v", err)
+		}
+
 		project, err := utils.GetFlagString(cmd, "project", utils.ValidProjects, false)
 		if err != nil {
 			log.Fatalf("Error: %v", err)
@@ -66,36 +71,36 @@ flag is ignored. The file should be in INI format WITH keys and values, even tho
 			log.Fatalf("Error reading option flag: %v", err)
 		}
 
-		cloudProvider := utils.GetCloudProvider(project, utils.ProjectProviders)
+		// provider, err := utils.GetConfigProperty(project, projEnvironment, "provider")
+		provider, err := utils.GetConfigProperty("\""+project+"\"", projEnvironment+".provider")
+
+		if err != nil {
+			fmt.Println("Error getting provider: ", err)
+			return
+		}
 
 		projEnvironmentList := []string{projEnvironment}
 
 		if projEnvironment == "all" {
 			projEnvironmentList = utils.ValidEnvs
 		}
-		for _, projEnv := range projEnvironmentList {
 
-			if utils.StringInSlice("OCI", cloudProvider) {
+		for _, projEnv := range projEnvironmentList {
+			switch provider {
+			case "OCI":
 				fileName := fmt.Sprintf("%s_%s", projEnv, envType)
 
-				configProvider, configFileName, err := utils.GetConfigProviderOCI()
+				configProvider, _, err := utils.GetConfigProviderOCI()
 
 				if err != nil {
 					fmt.Println("Error getting config provider: ", err)
 					return
 				}
 
-				ini_config, err := ini.Load(configFileName)
-				if err != nil {
-					fmt.Println("Error loading config file: ", err)
-					return
-				}
-
-				sec := ini_config.Section("OCI")
-				namespace := sec.Key("namespace").String()
+				ociNamespace, err := utils.GetConfigProperty("OCI", "namespace")
 
 				if err != nil {
-					fmt.Println("Error getting config provider: ", err)
+					fmt.Println("Error getting namespace: ", err)
 					return
 				}
 
@@ -104,21 +109,19 @@ flag is ignored. The file should be in INI format WITH keys and values, even tho
 
 				if filePath != "" {
 					fmt.Printf("Deleting from file: %s\n", filePath)
-					DeleteFromFile(client, namespace, project, projEnv, envType, filePath, fileName, isQuiet)
+					DeleteFromFile(client, ociNamespace, project, projEnv, envType, filePath, fileName, isQuiet, isK8s)
 				} else {
-					DeleteFromArgs(client, namespace, project, projEnv, envType, args, fileName, isQuiet)
+					DeleteFromArgs(client, ociNamespace, project, projEnv, envType, args, fileName, isQuiet, isK8s)
 				}
-			} else if utils.StringInSlice("DGO", cloudProvider) && projEnv == "prod" {
-				client, err := utils.GetClientDGO()
+			case "AWS":
+				// projEnv, err = utils.GetConfigProperty(project, projEnv, "branch_name")
+				projEnv, err = utils.GetConfigProperty("\""+project+"\"", projEnvironment+".branch_name")
+
 				if err != nil {
-					fmt.Println("Error getting client: ", err)
+					fmt.Println("Error getting project environment: ", err)
 					return
 				}
 
-				DeleteDGOEnv(client, project, filePath, args, isQuiet)
-
-			} else if utils.StringInSlice("AWS", cloudProvider) {
-				projEnv = utils.CastBranchName(projEnv, project)
 				configProvider, _, err := utils.GetConfigProviderAWS()
 				if err != nil {
 					fmt.Println("Error getting config provider: ", err)
@@ -127,13 +130,34 @@ flag is ignored. The file should be in INI format WITH keys and values, even tho
 
 				client := amplify.NewFromConfig(configProvider)
 				utils.HandleAWS(client, project, projEnv, false, filePath, args, "", "", isQuiet, cmd.Name())
+
+			case "DGO":
+				client, err := utils.GetClientDGO()
+				if err != nil {
+					fmt.Println("Error getting client: ", err)
+					return
+				}
+
+				DeleteDGOEnv(client, project, projEnv, filePath, args, isQuiet)
+
+			default:
+				fmt.Println("Invalid provider")
+				return
 			}
 		}
 	},
 }
 
-func DeleteDGOEnv(client *godo.Client, project string, filePath string, envNames []string, isQuiet bool) {
-	dgoApp := utils.GetDGOApp(client, project)
+func DeleteDGOEnv(client *godo.Client, project string, projEnvironment string, filePath string, envNames []string, isQuiet bool) {
+	// dgoAppName, err := utils.GetConfigProperty(project, projEnvironment, "app_name")
+	dgoAppName, err := utils.GetConfigProperty("\""+project+"\"", projEnvironment+".app_name")
+
+	if err != nil {
+		fmt.Println("Error getting app name: ", err)
+		return
+	}
+
+	dgoApp := utils.GetDGOApp(client, dgoAppName)
 	isSaved := false
 
 	deleteEnvs := func(component *godo.AppStaticSiteSpec) (bool, error) {
@@ -182,7 +206,7 @@ func ConfirmAndSave(client objectstorage.ObjectStorageClient, namespace, project
 	}
 }
 
-func DeleteFromArgs(client objectstorage.ObjectStorageClient, namespace, project, projEnvironment, envType string, envNames []string, fileName string, isQuiet bool) {
+func DeleteFromArgs(client objectstorage.ObjectStorageClient, namespace string, project string, projEnvironment string, envType string, envNames []string, fileName string, isQuiet bool, isK8s bool) {
 	fmt.Println("Deleting from args")
 
 	envFile, err := utils.GetEnvsFileAsIni(project, fileName, client, namespace, utils.BucketName)
@@ -192,11 +216,24 @@ func DeleteFromArgs(client objectstorage.ObjectStorageClient, namespace, project
 	}
 
 	if utils.DeleteEnvironmentVariables(envFile, envNames) {
+		if isK8s {
+			k8sClient, err := utils.GetK8sClient()
+			if err != nil {
+				log.Fatalf("Error getting Kubernetes client: %v", err)
+			}
+			manager, resourceName := utils.GetK8sResourceDataParams(k8sClient, project, projEnvironment, envType)
+
+			err = utils.DeleteK8sResourceKey(manager, resourceName, envNames)
+
+			if err != nil {
+				log.Fatalf("Failed to update resource data: %v", err)
+			}
+		}
 		ConfirmAndSave(client, namespace, project, fileName, projEnvironment, envFile, isQuiet)
 	}
 }
 
-func DeleteFromFile(client objectstorage.ObjectStorageClient, namespace, project, projEnvironment, envType, filePath, fileName string, isQuiet bool) {
+func DeleteFromFile(client objectstorage.ObjectStorageClient, namespace string, project string, projEnvironment string, envType string, filePath string, fileName string, isQuiet bool, isK8s bool) {
 	userEnvFile, err := ini.Load(filePath)
 	if err != nil {
 		fmt.Println("Error loading file: ", err)
@@ -214,6 +251,19 @@ func DeleteFromFile(client objectstorage.ObjectStorageClient, namespace, project
 	}
 
 	if utils.DeleteEnvironmentVariables(envFile, userEnvFile.Section("").KeyStrings()) {
+		if isK8s {
+			k8sClient, err := utils.GetK8sClient()
+			if err != nil {
+				log.Fatalf("Error getting Kubernetes client: %v", err)
+			}
+			manager, resourceName := utils.GetK8sResourceDataParams(k8sClient, project, projEnvironment, envType)
+
+			err = utils.DeleteK8sResourceKey(manager, resourceName, userEnvFile.Section("").KeyStrings())
+
+			if err != nil {
+				log.Fatalf("Failed to update resource data: %v", err)
+			}
+		}
 		ConfirmAndSave(client, namespace, project, fileName, projEnvironment, envFile, isQuiet)
 	}
 }
@@ -230,6 +280,7 @@ func init() {
 	deleteCmd.Flags().StringP("environment", "e", "", fmt.Sprintf("Specify the project environment (options: %s)", validProjectEnvsStr))
 	deleteCmd.Flags().StringP("file", "f", "", "Specify a file containing a list of environment variables or secrets. The file should be in INI format.")
 	deleteCmd.Flags().Bool("quiet", false, "Don't ask for confirmation before deleting the environment variable or secret")
+	deleteCmd.Flags().BoolP("k8s", "k", false, "Delete the environment variable or secret from the Kubernetes cluster")
 
 	deleteCmd.MarkFlagRequired("project")
 	deleteCmd.MarkFlagRequired("environment")

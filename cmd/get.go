@@ -1,5 +1,5 @@
 /*
-Copyright © 2024 Stany Helberty stanyhelberth@gmail.com
+Copyright © 2025 Stany Helberth stanyhelberth@gmail.com
 */
 
 package cmd
@@ -18,7 +18,6 @@ import (
 	"github.com/oracle/oci-go-sdk/v49/objectstorage"
 	"github.com/spf13/cobra"
 	"github.com/stanyzra/env-manager-v2/internal/utils"
-	"gopkg.in/ini.v1"
 )
 
 var getCmd = &cobra.Command{
@@ -67,10 +66,17 @@ variable names in the arguments.`,
 			log.Fatalf("Error reading option flag: %v", err)
 		}
 
-		cloudProvider := utils.GetCloudProvider(project, utils.ProjectProviders)
+		// provider, err := utils.GetConfigProperty(project, projEnvironment, "provider")
+		provider, err := utils.GetConfigProperty("\""+project+"\"", projEnvironment+".provider")
 
-		if utils.StringInSlice("OCI", cloudProvider) {
-			configProvider, configFileName, err := utils.GetConfigProviderOCI()
+		if err != nil {
+			fmt.Println("Error getting provider: ", err)
+			return
+		}
+
+		switch provider {
+		case "OCI":
+			configProvider, _, err := utils.GetConfigProviderOCI()
 			if err != nil {
 				fmt.Println("Error getting config provider: ", err)
 				return
@@ -79,28 +85,24 @@ variable names in the arguments.`,
 			client, err := objectstorage.NewObjectStorageClientWithConfigurationProvider(configProvider)
 			helpers.FatalIfError(err)
 
-			iniConfig, err := ini.Load(configFileName)
+			ociNamespace, err := utils.GetConfigProperty("OCI", "namespace")
+
 			if err != nil {
-				fmt.Println("Error loading config file: ", err)
+				fmt.Println("Error getting namespace: ", err)
 				return
 			}
 
-			sec := iniConfig.Section("OCI")
-			namespace := sec.Key("namespace").String()
+			HandleOCI(client, ociNamespace, project, projEnvironment, envType, isGetAll, args)
 
-			HandleOCI(client, namespace, project, projEnvironment, envType, isGetAll, args)
+		case "AWS":
+			// projEnvironment, err = utils.GetConfigProperty(project, projEnvironment, "branch_name")
+			projEnvironment, err = utils.GetConfigProperty("\""+project+"\"", projEnvironment+".branch_name")
 
-		} else if utils.StringInSlice("DGO", cloudProvider) && projEnvironment == "prod" {
-			client, err := utils.GetClientDGO()
 			if err != nil {
-				fmt.Println("Error getting client: ", err)
+				fmt.Println("Error getting project environment: ", err)
 				return
 			}
 
-			showEnvs(client, project, projEnvironment, isGetAll, args)
-
-		} else if utils.StringInSlice("AWS", cloudProvider) {
-			projEnvironment = utils.CastBranchName(projEnvironment, project)
 			configProvider, _, err := utils.GetConfigProviderAWS()
 			if err != nil {
 				fmt.Println("Error getting config provider: ", err)
@@ -110,13 +112,32 @@ variable names in the arguments.`,
 			client := amplify.NewFromConfig(configProvider)
 
 			utils.HandleAWS(client, project, projEnvironment, isGetAll, "", args, "", "", false, cmd.Name())
-		}
 
+		case "DGO":
+			client, err := utils.GetClientDGO()
+			if err != nil {
+				fmt.Println("Error getting client: ", err)
+				return
+			}
+
+			showEnvs(client, project, projEnvironment, isGetAll, args)
+
+		default:
+			fmt.Println("Invalid provider")
+			return
+		}
 	},
 }
 
 func showEnvs(client *godo.Client, project string, projEnvironment string, isGetAll bool, envNames []string) {
-	specificApp := utils.GetDGOApp(client, project)
+	// dgoAppName, err := utils.GetConfigProperty(project, projEnvironment, "app_name")
+	dgoAppName, err := utils.GetConfigProperty("\""+project+"\"", projEnvironment+".app_name")
+	fmt.Println("dgoAppName: ", dgoAppName)
+	if err != nil {
+		log.Fatalf("Error getting app name: %v", err)
+	}
+
+	specificApp := utils.GetDGOApp(client, dgoAppName)
 
 	printEnvs := func(component *godo.AppStaticSiteSpec) error {
 		if isGetAll {
@@ -137,10 +158,20 @@ func showEnvs(client *godo.Client, project string, projEnvironment string, isGet
 		return nil
 	}
 
-	err := godo.ForEachAppSpecComponent(specificApp.Spec, func(component *godo.AppStaticSiteSpec) error {
-		if utils.StringInSlice(component.Name, utils.ValidAppComponents) {
+	// appComponentName, err := utils.GetConfigProperty(project, projEnvironment, "app_component_name")
+	appComponentName, err := utils.GetConfigProperty("\""+project+"\"", projEnvironment+".app_component_name")
+
+	if err != nil {
+		log.Fatalf("Error getting app component name: %v", err)
+	}
+
+	err = godo.ForEachAppSpecComponent(specificApp.Spec, func(component *godo.AppStaticSiteSpec) error {
+		if component.Name == appComponentName {
 			return printEnvs(component)
 		}
+		// if utils.StringInSlice(component.Name, utils.ValidAppComponents) {
+		// 	return printEnvs(component)
+		// }
 		return nil
 	})
 	if err != nil {

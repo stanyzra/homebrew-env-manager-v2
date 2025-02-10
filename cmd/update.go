@@ -1,5 +1,5 @@
 /*
-Copyright © 2024 NAME HERE stanyhelberth@gmail.com
+Copyright © 2025 Stany Helberth stanyhelberth@gmail.com
 */
 package cmd
 
@@ -52,6 +52,11 @@ it will not be created. Use the create command to create a new environment varia
 		return nil
 	},
 	Run: func(cmd *cobra.Command, args []string) {
+		isK8s, err := cmd.Flags().GetBool("k8s")
+		if err != nil {
+			log.Fatalf("Error reading option flag: %v", err)
+		}
+
 		project, err := utils.GetFlagString(cmd, "project", utils.ValidProjects, false)
 		if err != nil {
 			log.Fatalf("Error: %v", err)
@@ -82,7 +87,13 @@ it will not be created. Use the create command to create a new environment varia
 			log.Fatalf("Error reading option flag: %v", err)
 		}
 
-		cloudProvider := utils.GetCloudProvider(project, utils.ProjectProviders)
+		// provider, err := utils.GetConfigProperty(project, projEnvironment, "provider")
+		provider, err := utils.GetConfigProperty("\""+project+"\"", projEnvironment+".provider")
+
+		if err != nil {
+			fmt.Println("Error getting provider: ", err)
+			return
+		}
 
 		projEnvironmentList := []string{projEnvironment}
 
@@ -90,28 +101,21 @@ it will not be created. Use the create command to create a new environment varia
 			projEnvironmentList = utils.ValidEnvs
 		}
 		for _, projEnv := range projEnvironmentList {
-			if utils.StringInSlice("OCI", cloudProvider) {
-
+			switch provider {
+			case "OCI":
 				fileName := fmt.Sprintf("%s_%s", projEnv, envType)
 
-				configProvider, configFileName, err := utils.GetConfigProviderOCI()
+				configProvider, _, err := utils.GetConfigProviderOCI()
 
 				if err != nil {
 					fmt.Println("Error getting config provider: ", err)
 					return
 				}
 
-				ini_config, err := ini.Load(configFileName)
-				if err != nil {
-					fmt.Println("Error loading config file: ", err)
-					return
-				}
-
-				sec := ini_config.Section("OCI")
-				namespace := sec.Key("namespace").String()
+				ociNamespace, err := utils.GetConfigProperty("OCI", "namespace")
 
 				if err != nil {
-					fmt.Println("Error getting config provider: ", err)
+					fmt.Println("Error getting namespace: ", err)
 					return
 				}
 
@@ -119,23 +123,20 @@ it will not be created. Use the create command to create a new environment varia
 				helpers.FatalIfError(err)
 
 				if filePath != "" {
-					UpdateEnvFromFile(client, namespace, project, projEnv, envType, fileName, filePath)
+					UpdateEnvFromFile(client, ociNamespace, project, projEnv, envType, fileName, filePath, isK8s)
 				} else {
-
-					UpdateSingleEnv(client, namespace, project, projEnv, envType, envName, envValue, fileName)
+					UpdateSingleEnv(client, ociNamespace, project, projEnv, envType, envName, envValue, fileName, isK8s)
 				}
 
-			} else if utils.StringInSlice("DGO", cloudProvider) && projEnv == "prod" {
-				client, err := utils.GetClientDGO()
+			case "AWS":
+				// projEnv, err = utils.GetConfigProperty(project, projEnv, "branch_name")
+				projEnv, err = utils.GetConfigProperty("\""+project+"\"", projEnvironment+".branch_name")
+
 				if err != nil {
-					fmt.Println("Error getting client: ", err)
+					fmt.Println("Error getting project environment: ", err)
 					return
 				}
 
-				UpdateDGOEnv(client, project, filePath, projEnv, envName, envValue)
-
-			} else if utils.StringInSlice("AWS", cloudProvider) {
-				projEnv = utils.CastBranchName(projEnv, project)
 				configProvider, _, err := utils.GetConfigProviderAWS()
 				if err != nil {
 					fmt.Println("Error getting config provider: ", err)
@@ -144,13 +145,34 @@ it will not be created. Use the create command to create a new environment varia
 
 				client := amplify.NewFromConfig(configProvider)
 				utils.HandleAWS(client, project, projEnv, false, filePath, args, envName, envValue, false, cmd.Name())
+
+			case "DGO":
+				client, err := utils.GetClientDGO()
+				if err != nil {
+					fmt.Println("Error getting client: ", err)
+					return
+				}
+
+				UpdateDGOEnv(client, project, filePath, projEnv, envName, envValue)
+
+			default:
+				fmt.Println("Invalid provider")
+				return
 			}
 		}
 	},
 }
 
 func UpdateDGOEnv(client *godo.Client, project string, filePath string, projEnvironment string, envName string, envValue string) {
-	dgoApp := utils.GetDGOApp(client, project)
+	// dgoAppName, err := utils.GetConfigProperty(project, projEnvironment, "app_name")
+	dgoAppName, err := utils.GetConfigProperty("\""+project+"\"", projEnvironment+".app_name")
+
+	if err != nil {
+		fmt.Println("Error getting app name: ", err)
+		return
+	}
+
+	dgoApp := utils.GetDGOApp(client, dgoAppName)
 	isSaved := false
 
 	updateEnvs := func(component *godo.AppStaticSiteSpec) (bool, error) {
@@ -171,7 +193,7 @@ func UpdateDGOEnv(client *godo.Client, project string, filePath string, projEnvi
 				return false, err
 			}
 
-			isSaved = UpdateEnvironmentVariables(envsAsIni, userEnvsAsIni)
+			isSaved, _ = utils.UpdateEnvironmentVariables(envsAsIni, userEnvsAsIni)
 		}
 
 		if isSaved {
@@ -181,7 +203,7 @@ func UpdateDGOEnv(client *godo.Client, project string, filePath string, projEnvi
 		return isSaved, nil
 	}
 
-	err := utils.UpdateDGOApp(client, project, dgoApp, updateEnvs)
+	err = utils.UpdateDGOApp(client, project, dgoApp, updateEnvs)
 	if err != nil {
 		fmt.Println("Error updating app: ", err)
 		return
@@ -192,43 +214,44 @@ func UpdateDGOEnv(client *godo.Client, project string, filePath string, projEnvi
 	}
 }
 
-func UpdateEnvironmentVariables(envFile *ini.File, userEnvsFile *ini.File) bool {
-	isSaved := false
-	for _, key := range userEnvsFile.Section("").Keys() {
-		if !envFile.Section("").HasKey(key.Name()) {
-			fmt.Printf("[WARNING] Key \"%s\" not found\n", key.Name())
-			continue
-		}
-
-		isSaved = true
-		envFile.Section("").Key(key.Name()).SetValue(key.Value())
-	}
-
-	return isSaved
-}
-
-func UpdateEnvFromFile(client objectstorage.ObjectStorageClient, namespace string, project string, projEnvironment string, envType string, fileName string, filePath string) {
+func UpdateEnvFromFile(client objectstorage.ObjectStorageClient, ociNamespace string, project string, projEnvironment string, envType string, fileName string, filePath string, isK8s bool) {
 	userEnvFile, err := ini.Load(filePath)
 	if err != nil {
 		fmt.Println("Error loading file: ", err)
 		return
 	}
 
-	envFile, err := utils.GetEnvsFileAsIni(project, fileName, client, namespace, utils.BucketName)
+	envFile, err := utils.GetEnvsFileAsIni(project, fileName, client, ociNamespace, utils.BucketName)
 
 	if err != nil {
 		fmt.Println("Error loading file: ", err)
 		return
 	}
 
-	if UpdateEnvironmentVariables(envFile, userEnvFile) {
-		utils.SaveEnvFile(client, namespace, project, fileName, envFile, utils.BucketName)
+	isSaved, updatedEnvs := utils.UpdateEnvironmentVariables(envFile, userEnvFile)
+
+	if isSaved {
+		if isK8s {
+			k8sClient, err := utils.GetK8sClient()
+			if err != nil {
+				log.Fatalf("Error getting Kubernetes client: %v", err)
+			}
+			manager, resourceName := utils.GetK8sResourceDataParams(k8sClient, project, projEnvironment, envType)
+
+			err = utils.UpdateK8sResourceData(manager, updatedEnvs, resourceName)
+
+			if err != nil {
+				log.Fatalf("Failed to update resource data: %v", err)
+			}
+		}
+		utils.SaveEnvFile(client, ociNamespace, project, fileName, envFile, utils.BucketName)
 		fmt.Printf("Environment variables saved in project \"%s\" in \"%s\" environment\n", project, projEnvironment)
 	}
+
 }
 
-func UpdateSingleEnv(client objectstorage.ObjectStorageClient, namespace string, project string, projEnvironment string, envType string, envName string, envValue string, fileName string) {
-	envFile, err := utils.GetEnvsFileAsIni(project, fileName, client, namespace, utils.BucketName)
+func UpdateSingleEnv(client objectstorage.ObjectStorageClient, ociNamespace string, project string, projEnvironment string, envType string, envName string, envValue string, fileName string, isK8s bool) {
+	envFile, err := utils.GetEnvsFileAsIni(project, fileName, client, ociNamespace, utils.BucketName)
 
 	if err != nil {
 		fmt.Println("Error loading file: ", err)
@@ -240,9 +263,27 @@ func UpdateSingleEnv(client objectstorage.ObjectStorageClient, namespace string,
 		return
 	}
 
+	if isK8s {
+		k8sClient, err := utils.GetK8sClient()
+		if err != nil {
+			log.Fatalf("Error getting Kubernetes client: %v", err)
+		}
+		manager, resourceName := utils.GetK8sResourceDataParams(k8sClient, project, projEnvironment, envType)
+
+		envsAsIni := ini.Empty()
+		envsAsIni.Section("").Key(envName).SetValue(envValue)
+
+		err = utils.UpdateK8sResourceData(manager, envsAsIni, resourceName)
+
+		if err != nil {
+			log.Fatalf("Failed to update resource data: %v", err)
+		}
+	}
+
 	envFile.Section("").Key(envName).SetValue(envValue)
-	utils.SaveEnvFile(client, namespace, project, fileName, envFile, utils.BucketName)
+	utils.SaveEnvFile(client, ociNamespace, project, fileName, envFile, utils.BucketName)
 	fmt.Printf("Environment variables saved in project \"%s\" in \"%s\" environment\n", project, projEnvironment)
+
 }
 
 func init() {
@@ -258,6 +299,7 @@ func init() {
 	updateCmd.Flags().StringP("name", "n", "", "Specify the environment variable or secret name")
 	updateCmd.Flags().StringP("value", "v", "", "Specify the environment variable or secret value")
 	updateCmd.Flags().StringP("file", "f", "", "Specify a file containing a list of environment variables or secrets. The file should be in INI format.")
+	updateCmd.Flags().BoolP("k8s", "k", false, "Update the environment variable or secret from the Kubernetes cluster")
 
 	updateCmd.MarkFlagRequired("project")
 	updateCmd.MarkFlagRequired("environment")

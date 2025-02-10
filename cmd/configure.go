@@ -1,5 +1,5 @@
 /*
-Copyright © 2024 Stany Helberty stanyhelberth@gmail.com
+Copyright © 2025 Stany Helberth stanyhelberth@gmail.com
 */
 package cmd
 
@@ -16,15 +16,16 @@ import (
 	"gopkg.in/ini.v1"
 )
 
-var cloudProviders = []string{"OCI", "AWS", "DGO"}
+var cloudProviders = []string{"OCI", "AWS", "DGO", "K8S"}
 
 // configureCmd represents the configure command
 var configureCmd = &cobra.Command{
 	Use:   "configure",
-	Short: "Configure Cloud credentials",
-	Long: `Configure Cloud credentials to be used by the CLI. The credentials are stored in
+	Short: "Configure Cloud and Kubernetes credentials",
+	Long: `Configure Cloud and Kubernetes credentials to be used by the CLI. The credentials are stored in
 <home-directory>/.env-manager-v2/config file. Accepted cloud providers are: OCI, AWS, and DigitalOcean.`,
 	Run: func(cmd *cobra.Command, args []string) {
+		fmt.Println("[WARNING] This command isn't fully implemented yet, we recommend you to create the configuration file manually in \"~/.env-manager-v2/config\" following the documentation.")
 		reader := bufio.NewReader(os.Stdin)
 		fmt.Println("Select a cloud provider: ")
 		for i, provider := range cloudProviders {
@@ -84,10 +85,8 @@ func SaveCredentials(configFileName string, credentials map[string]string, provi
 
 	// check if the path exists
 	if _, err := os.Stat(configFileName); os.IsNotExist(err) {
-		// fmt.Println("File does not exist, creating it in: ", configFileName)
 		os.MkdirAll(fmt.Sprintf("%s/%s", userHome, ".env-manager"), os.ModePerm)
 	} else {
-		// fmt.Println("File exists, loading it in: ", configFileName)
 		ini_config, err = ini.Load(configFileName)
 		if err != nil {
 			fmt.Println("Error loading config file: ", err)
@@ -147,6 +146,14 @@ func ManageCloudProvider(provider int) {
 			"Enter DGO API Key: ",
 		}
 		credentialKeys = []string{"dgo_api_token"}
+	case 3:
+		fmt.Println("Configuring Kubernetes")
+		questions = []string{
+			"Kubernetes host: ",
+			"Kubernetes token: ",
+			"Kubernetes certificate path: ",
+		}
+		credentialKeys = []string{"k8s_host", "k8s_token", "k8s_certificate_path"}
 	default:
 		fmt.Println("Invalid choice")
 	}
