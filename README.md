@@ -91,9 +91,9 @@ Below is a detailed list of available configuration options.
 | k8s_certificate_path   | Path to Kubernetes CA certificate |
 
 #### **[ENVIRONMENTS] - Environments List**
-| Key          | Description                                    |
-|--------------|-------------------------------------------------|
-| environments | Comma-separated list of available environments |
+| Key          | Description                                            |
+|--------------|--------------------------------------------------------|
+| environments | Default comma-separated list of available environments |
 
 #### **[PROJECTS] - Projects List**
 | Key       | Description                           |
@@ -116,15 +116,16 @@ prod.app_name = my-dgo-app-name
 We highly recommend using the **Github project** name as the project name in the configuration file. This way, you can easily identify the project and its environments.
 
 #### **Project Configuration Keys**
-| Key                                | Description                                               |
-|------------------------------------|-----------------------------------------------------------|
-| `<environment>.provider`           | Cloud provider for the environment (e.g., AWS, OCI, DGO)  |
-| `<environment>.namespace`          | Kubernetes Namespace (if applicable)                      |
-| `<environment>.configmap_name`     | Kubernetes ConfigMap name (if applicable)                 |
-| `<environment>.secret_name`        | Kubernetes Secret name (if applicable)                    |
-| `<environment>.branch_name`        | GitHub branch name for the environment                    |
-| `<environment>.app_component_name` | DigitalOcean App Component name (if applicable)           |
-| `<environment>.app_name`           | DigitalOcean App name (if applicable)                     |
+| Key                                | Description                                                    |
+|------------------------------------|----------------------------------------------------------------|
+| `environments`                     | Comma-separated list of available environments for the project |
+| `<environment>.provider`           | Cloud provider for the environment (e.g., AWS, OCI, DGO)       |
+| `<environment>.namespace`          | Kubernetes Namespace (if applicable)                           |
+| `<environment>.configmap_name`     | Kubernetes ConfigMap name (if applicable)                      |
+| `<environment>.secret_name`        | Kubernetes Secret name (if applicable)                         |
+| `<environment>.branch_name`        | GitHub branch name for the environment                         |
+| `<environment>.app_component_name` | DigitalOcean App Component name (if applicable)                |
+| `<environment>.app_name`           | DigitalOcean App name (if applicable)                          |
 
 This structured configuration ensures flexibility and organization, allowing easy management of multiple environments and projects.
 
@@ -176,6 +177,7 @@ environments = dev,homolog,prod
 projects = my-big-front-end-project, my-small-front-end-project, my-backend-project-on-k8s
 
 ["my-big-front-end-project"]
+environments = dev,homolog,prod
 dev.provider = AWS
 dev.branch_name = development
 homolog.provider = AWS
@@ -186,6 +188,7 @@ prod.app_component_name = prod-app-component-name-big-proj # required for DGO
 prod.app_name = prod-app-name-big-proj # required for DGO
 
 ["my-small-front-end-project"]
+environments = dev,prod
 dev.provider = DGO
 dev.branch_name = development
 dev.app_component_name = dev-app-component-name-small-proj # required for DGO
@@ -196,6 +199,7 @@ prod.app_component_name = prod-app-component-name-small-proj # required for DGO
 prod.app_name = prod-app-name-small-proj # required for DGO
 
 ["my-backend-project-on-k8s"]
+environments = dev,homolog,prod
 dev.provider = OCI
 dev.namespace = dev-namespace # required for Kubernetes integration
 dev.configmap_name = dev-configmap # required for Kubernetes integration

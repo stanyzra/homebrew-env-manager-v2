@@ -66,6 +66,13 @@ update command to update an existing environment variable or secret.`,
 			log.Fatalf("Error: %v", err)
 		}
 
+		environments, err := utils.GetConfigProperty(project, "environments")
+		if err != nil {
+			log.Fatalf("Error: %v", err)
+		}
+
+		utils.ValidEnvs = strings.Split(strings.ReplaceAll(environments, " ", ""), ",")
+
 		projEnvironment, err := utils.GetFlagString(cmd, "environment", utils.ValidEnvs, true)
 		if err != nil {
 			log.Fatalf("Error: %v", err)
@@ -92,15 +99,13 @@ update command to update an existing environment variable or secret.`,
 			projEnvironmentList = utils.ValidEnvs
 		}
 
-		// provider, err := utils.GetConfigProperty(project, projEnvironment, "provider")
-		provider, err := utils.GetConfigProperty("\""+project+"\"", projEnvironment+".provider")
-
-		if err != nil {
-			fmt.Println("Error getting provider: ", err)
-			return
-		}
-
 		for _, projEnv := range projEnvironmentList {
+			provider, err := utils.GetConfigProperty(project, projEnv+".provider")
+			if err != nil {
+				fmt.Println("Error getting provider: ", err)
+				return
+			}
+
 			switch provider {
 			case "OCI":
 				fileName := fmt.Sprintf("%s_%s", projEnv, envType)
@@ -136,8 +141,7 @@ update command to update an existing environment variable or secret.`,
 				CreateDGOEnv(client, project, projEnv, filePath, envName, envValue)
 
 			case "AWS":
-				// projEnv, err = utils.GetConfigProperty(project, projEnv, "branch_name")
-				projEnv, err = utils.GetConfigProperty("\""+project+"\"", projEnvironment+".branch_name")
+				projEnv, err = utils.GetConfigProperty(project, projEnv+".branch_name")
 
 				if err != nil {
 					fmt.Println("Error getting project environment: ", err)
@@ -162,8 +166,7 @@ update command to update an existing environment variable or secret.`,
 }
 
 func CreateDGOEnv(client *godo.Client, project string, projEnvironment string, filePath string, envName string, envValue string) {
-	// dgoAppName, err := utils.GetConfigProperty(project, projEnvironment, "app_name")
-	dgoAppName, err := utils.GetConfigProperty("\""+project+"\"", projEnvironment+".app_name")
+	dgoAppName, err := utils.GetConfigProperty(project, projEnvironment+".app_name")
 
 	if err != nil {
 		fmt.Println("Error getting app name: ", err)
