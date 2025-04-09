@@ -201,7 +201,7 @@ func GetK8sClient() (*kubernetes.Clientset, error) {
 
 func GetK8sResourceDataParams(k8sClient *kubernetes.Clientset, project string, projEnvironment string, envType string) (KubernetesResourceManager, string) {
 	// k8sNamespace, err := GetConfigProperty(project, projEnvironment, "namespace")
-	k8sNamespace, err := GetConfigProperty("\""+project+"\"", projEnvironment+".namespace")
+	k8sNamespace, err := GetConfigProperty(project, projEnvironment+".namespace")
 
 	if err != nil {
 		fmt.Println("Error getting namespace: ", err)
@@ -214,11 +214,11 @@ func GetK8sResourceDataParams(k8sClient *kubernetes.Clientset, project string, p
 	if envType == "envs" {
 		manager = &ConfigMapManager{Client: k8sClient, Namespace: k8sNamespace}
 		// resourceName, err = GetConfigProperty(project, projEnvironment, "configmap_name")
-		resourceName, err = GetConfigProperty("\""+project+"\"", projEnvironment+".configmap_name")
+		resourceName, err = GetConfigProperty(project, projEnvironment+".configmap_name")
 	} else {
 		manager = &SecretManager{Client: k8sClient, Namespace: k8sNamespace}
 		// resourceName, err = GetConfigProperty(project, projEnvironment, "secret_name")
-		resourceName, err = GetConfigProperty("\""+project+"\"", projEnvironment+".secret_name")
+		resourceName, err = GetConfigProperty(project, projEnvironment+".secret_name")
 	}
 
 	if err != nil {
@@ -343,6 +343,7 @@ func GetConfigFileName() string {
 }
 
 func GetConfigProperty(sectionName string, property string) (string, error) {
+	sectionName = "\"" + sectionName + "\""
 	configFileName := GetConfigFileName()
 
 	cfg, err := ini.Load(configFileName)
@@ -351,7 +352,10 @@ func GetConfigProperty(sectionName string, property string) (string, error) {
 	}
 
 	if !cfg.Section(sectionName).HasKey(property) {
-		return "", fmt.Errorf("property \"%s\" not found in section \"%s\". Check your configuration file", property, sectionName)
+		sectionName = strings.ReplaceAll(sectionName, "\"", "")
+		if !cfg.Section(sectionName).HasKey(property) {
+			return "", fmt.Errorf("property \"%s\" not found in section \"%s\". Check your configuration file", property, sectionName)
+		}
 	}
 
 	return cfg.Section(sectionName).Key(property).String(), nil
@@ -446,7 +450,7 @@ func DeleteAWSEnvs(branchInfos *amplify.GetBranchOutput, client *amplify.Client,
 		fmt.Printf("Deleting from file: %s\n", filePath)
 	}
 
-	isSaved := DeleteEnvironmentVariables(iniAWS, envNames)
+	isSaved := DeleteEnvironmentVariables(iniAWS, envNames, project, projEnvironment)
 	if isSaved {
 		if isQuiet || GetUserPermission("Are you sure you want to delete the environment variables?") {
 			_, err := client.UpdateBranch(context.Background(), &amplify.UpdateBranchInput{
@@ -600,12 +604,12 @@ func UpdateDGOApp(client *godo.Client, project string, dgoApp *godo.App, updateF
 }
 
 // DeleteFromFile deletes environment variables in a ini.File
-func DeleteEnvironmentVariables(envFile *ini.File, envNames []string) bool {
+func DeleteEnvironmentVariables(envFile *ini.File, envNames []string, project string, projEnvironment string) bool {
 	isSaved := false
 	for _, envName := range envNames {
 		sec := envFile.Section("")
 		if !sec.HasKey(envName) {
-			fmt.Printf("Environment variable %s not found\n", envName)
+			fmt.Printf("[WARNING] Environment variable \"%s\" not found in project \"%s\" in \"%s\" environment\n", envName, project, projEnvironment)
 			continue
 		}
 		sec.DeleteKey(envName)

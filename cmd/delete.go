@@ -61,6 +61,12 @@ flag is ignored. The file should be in INI format WITH keys and values, even tho
 			log.Fatalf("Error: %v", err)
 		}
 
+		environments, err := utils.GetConfigProperty(project, "environments")
+		if err != nil {
+			log.Fatalf("Error: %v", err)
+		}
+
+		utils.ValidEnvs = strings.Split(strings.ReplaceAll(environments, " ", ""), ",")
 		filePath, err := cmd.Flags().GetString("file")
 		if err != nil {
 			log.Fatalf("Error reading option flag: %v", err)
@@ -71,14 +77,6 @@ flag is ignored. The file should be in INI format WITH keys and values, even tho
 			log.Fatalf("Error reading option flag: %v", err)
 		}
 
-		// provider, err := utils.GetConfigProperty(project, projEnvironment, "provider")
-		provider, err := utils.GetConfigProperty("\""+project+"\"", projEnvironment+".provider")
-
-		if err != nil {
-			fmt.Println("Error getting provider: ", err)
-			return
-		}
-
 		projEnvironmentList := []string{projEnvironment}
 
 		if projEnvironment == "all" {
@@ -86,6 +84,12 @@ flag is ignored. The file should be in INI format WITH keys and values, even tho
 		}
 
 		for _, projEnv := range projEnvironmentList {
+			provider, err := utils.GetConfigProperty(project, projEnv+".provider")
+
+			if err != nil {
+				fmt.Println("Error getting provider: ", err)
+				return
+			}
 			switch provider {
 			case "OCI":
 				fileName := fmt.Sprintf("%s_%s", projEnv, envType)
@@ -114,8 +118,7 @@ flag is ignored. The file should be in INI format WITH keys and values, even tho
 					DeleteFromArgs(client, ociNamespace, project, projEnv, envType, args, fileName, isQuiet, isK8s)
 				}
 			case "AWS":
-				// projEnv, err = utils.GetConfigProperty(project, projEnv, "branch_name")
-				projEnv, err = utils.GetConfigProperty("\""+project+"\"", projEnvironment+".branch_name")
+				projEnv, err = utils.GetConfigProperty(project, projEnv+".branch_name")
 
 				if err != nil {
 					fmt.Println("Error getting project environment: ", err)
@@ -149,8 +152,7 @@ flag is ignored. The file should be in INI format WITH keys and values, even tho
 }
 
 func DeleteDGOEnv(client *godo.Client, project string, projEnvironment string, filePath string, envNames []string, isQuiet bool) {
-	// dgoAppName, err := utils.GetConfigProperty(project, projEnvironment, "app_name")
-	dgoAppName, err := utils.GetConfigProperty("\""+project+"\"", projEnvironment+".app_name")
+	dgoAppName, err := utils.GetConfigProperty(project, projEnvironment+".app_name")
 
 	if err != nil {
 		fmt.Println("Error getting app name: ", err)
@@ -164,7 +166,7 @@ func DeleteDGOEnv(client *godo.Client, project string, projEnvironment string, f
 		envsAsIni := utils.GetDGOEnvsAsIni(component.Envs)
 
 		if filePath == "" {
-			isSaved = utils.DeleteEnvironmentVariables(envsAsIni, envNames)
+			isSaved = utils.DeleteEnvironmentVariables(envsAsIni, envNames, project, projEnvironment)
 		} else {
 			userEnvFile, err := ini.Load(filePath)
 			if err != nil {
@@ -175,26 +177,26 @@ func DeleteDGOEnv(client *godo.Client, project string, projEnvironment string, f
 				return false, nil
 			}
 
-			isSaved = utils.DeleteEnvironmentVariables(envsAsIni, userEnvFile.Section("").KeyStrings())
+			isSaved = utils.DeleteEnvironmentVariables(envsAsIni, userEnvFile.Section("").KeyStrings(), project, projEnvironment)
 		}
 
 		if isSaved {
-			component.Envs = utils.GetDGOEnvsFromIni(envsAsIni)
+			if isQuiet || utils.GetUserPermission("Are you sure you want to delete the environment variables?") {
+				component.Envs = utils.GetDGOEnvsFromIni(envsAsIni)
+			}
 		}
 
 		return isSaved, nil
 	}
 
-	if isQuiet || utils.GetUserPermission("Are you sure you want to delete the environment variables?") {
-		err := utils.UpdateDGOApp(client, project, dgoApp, deleteEnvs)
-		if err != nil {
-			fmt.Println("Error updating app: ", err)
-			return
-		}
+	err = utils.UpdateDGOApp(client, project, dgoApp, deleteEnvs)
+	if err != nil {
+		fmt.Println("Error updating app: ", err)
+		return
+	}
 
-		if isSaved {
-			fmt.Printf("Environment variables deleted in project \"%s\" in \"prod\" environment\n", project)
-		}
+	if isSaved {
+		fmt.Printf("Environment variables deleted in project \"%s\" in \"prod\" environment\n", project)
 	}
 
 }
@@ -207,15 +209,13 @@ func ConfirmAndSave(client objectstorage.ObjectStorageClient, namespace, project
 }
 
 func DeleteFromArgs(client objectstorage.ObjectStorageClient, namespace string, project string, projEnvironment string, envType string, envNames []string, fileName string, isQuiet bool, isK8s bool) {
-	fmt.Println("Deleting from args")
-
 	envFile, err := utils.GetEnvsFileAsIni(project, fileName, client, namespace, utils.BucketName)
 	if err != nil {
 		fmt.Println("Error getting environment file: ", err)
 		return
 	}
 
-	if utils.DeleteEnvironmentVariables(envFile, envNames) {
+	if utils.DeleteEnvironmentVariables(envFile, envNames, project, projEnvironment) {
 		if isK8s {
 			k8sClient, err := utils.GetK8sClient()
 			if err != nil {
@@ -250,7 +250,7 @@ func DeleteFromFile(client objectstorage.ObjectStorageClient, namespace string, 
 		return
 	}
 
-	if utils.DeleteEnvironmentVariables(envFile, userEnvFile.Section("").KeyStrings()) {
+	if utils.DeleteEnvironmentVariables(envFile, userEnvFile.Section("").KeyStrings(), project, projEnvironment) {
 		if isK8s {
 			k8sClient, err := utils.GetK8sClient()
 			if err != nil {

@@ -66,8 +66,7 @@ variable names in the arguments.`,
 			log.Fatalf("Error reading option flag: %v", err)
 		}
 
-		// provider, err := utils.GetConfigProperty(project, projEnvironment, "provider")
-		provider, err := utils.GetConfigProperty("\""+project+"\"", projEnvironment+".provider")
+		provider, err := utils.GetConfigProperty(project, projEnvironment+".provider")
 
 		if err != nil {
 			fmt.Println("Error getting provider: ", err)
@@ -96,7 +95,7 @@ variable names in the arguments.`,
 
 		case "AWS":
 			// projEnvironment, err = utils.GetConfigProperty(project, projEnvironment, "branch_name")
-			projEnvironment, err = utils.GetConfigProperty("\""+project+"\"", projEnvironment+".branch_name")
+			projEnvironment, err = utils.GetConfigProperty(project, projEnvironment+".branch_name")
 
 			if err != nil {
 				fmt.Println("Error getting project environment: ", err)
@@ -130,9 +129,7 @@ variable names in the arguments.`,
 }
 
 func showEnvs(client *godo.Client, project string, projEnvironment string, isGetAll bool, envNames []string) {
-	// dgoAppName, err := utils.GetConfigProperty(project, projEnvironment, "app_name")
-	dgoAppName, err := utils.GetConfigProperty("\""+project+"\"", projEnvironment+".app_name")
-	fmt.Println("dgoAppName: ", dgoAppName)
+	dgoAppName, err := utils.GetConfigProperty(project, projEnvironment+".app_name")
 	if err != nil {
 		log.Fatalf("Error getting app name: %v", err)
 	}
@@ -158,8 +155,7 @@ func showEnvs(client *godo.Client, project string, projEnvironment string, isGet
 		return nil
 	}
 
-	// appComponentName, err := utils.GetConfigProperty(project, projEnvironment, "app_component_name")
-	appComponentName, err := utils.GetConfigProperty("\""+project+"\"", projEnvironment+".app_component_name")
+	appComponentName, err := utils.GetConfigProperty(project, projEnvironment+".app_component_name")
 
 	if err != nil {
 		log.Fatalf("Error getting app component name: %v", err)
@@ -169,9 +165,6 @@ func showEnvs(client *godo.Client, project string, projEnvironment string, isGet
 		if component.Name == appComponentName {
 			return printEnvs(component)
 		}
-		// if utils.StringInSlice(component.Name, utils.ValidAppComponents) {
-		// 	return printEnvs(component)
-		// }
 		return nil
 	})
 	if err != nil {
@@ -214,7 +207,6 @@ func HandleOCI(client objectstorage.ObjectStorageClient, namespace, project, pro
 func ReadFullObject(client objectstorage.ObjectStorageClient, namespace string, project string, projEnvironment string, envType string) {
 	fileName := fmt.Sprintf("%s_%s", projEnvironment, envType)
 
-	// Get the object
 	getRequest := objectstorage.GetObjectRequest{
 		NamespaceName: &namespace,
 		BucketName:    common.String(utils.BucketName),
@@ -224,7 +216,6 @@ func ReadFullObject(client objectstorage.ObjectStorageClient, namespace string, 
 	getResponse, err := client.GetObject(context.Background(), getRequest)
 	helpers.FatalIfError(err)
 
-	// Read the object content
 	content, err := io.ReadAll(getResponse.Content)
 	if err != nil {
 		fmt.Println("Error reading object content: ", err)
