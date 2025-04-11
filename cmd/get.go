@@ -25,11 +25,10 @@ var getCmd = &cobra.Command{
 	Example: `env-manager-v2 get -p collection-back-end-v2.1 -e dev -t secrets -A
 env-manager-v2 get -p gollection-elastic -e homolog foo
 env-manager-v2 get -p collection-back-end-v2.1 -e dev bar moo baz`,
-	Short: "Get a list of environment variables and secrets from OCI Object Storage",
-	Long: `Get a list of environment variables and secrets (only names) from OCI Object
-Storage. Flags can be used to filter the list of environment variables and secrets. The
-project and environment flag is required. You can specify one or more environment
-variable names in the arguments.`,
+	Short: "Get a list of environment variables or secrets from a configured project",
+	Long: `Get a list of environment variables or secrets (only names) from a configured project.
+You can specify multiple environment variables or secrets in the arguments or use the -A
+flag to get all of them. The project and environment flag is required.`,
 	Args: func(cmd *cobra.Command, args []string) error {
 		isGetAll, err := cmd.Flags().GetBool("get-all")
 		if err != nil {
@@ -240,15 +239,43 @@ func ReadFullObject(client objectstorage.ObjectStorageClient, namespace string, 
 
 func init() {
 	rootCmd.AddCommand(getCmd)
-	validTypesStr := strings.Join(utils.ValidTypes, ", ")
-	validProjectsStr := strings.Join(utils.ValidProjects, ", ")
-	validProjectEnvsStr := strings.Join(utils.ValidEnvs, ", ")
 
 	getCmd.Flags().BoolP("get-all", "A", false, "List all environment variables")
-	getCmd.Flags().StringP("type", "t", "envs", fmt.Sprintf("Specify the environment variable type (options: %s)", validTypesStr))
-	getCmd.Flags().StringP("project", "p", "", fmt.Sprintf("Specify the project name (options: %s)", validProjectsStr))
-	getCmd.Flags().StringP("environment", "e", "", fmt.Sprintf("Specify the project environment (options: %s)", validProjectEnvsStr))
+	getCmd.Flags().StringP("type", "t", "envs", "Specify the environment variable type")
+	getCmd.Flags().StringP("project", "p", "", "Specify the project name")
+	getCmd.Flags().StringP("environment", "e", "", "Specify the project environment")
 
 	getCmd.MarkFlagRequired("project")
 	getCmd.MarkFlagRequired("environment")
+
+	getCmd.RegisterFlagCompletionFunc("project", func(cmd *cobra.Command, args []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {
+		projects := []cobra.Completion{}
+		projects = append(projects, utils.ValidProjects...)
+		return projects, cobra.ShellCompDirectiveDefault
+	})
+
+	getCmd.RegisterFlagCompletionFunc("type", func(cmd *cobra.Command, args []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {
+		types := []cobra.Completion{}
+		types = append(types, utils.ValidTypes...)
+		return types, cobra.ShellCompDirectiveDefault
+	})
+
+	getCmd.RegisterFlagCompletionFunc("environment", func(cmd *cobra.Command, args []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {
+		project, err := cmd.Flags().GetString("project")
+		if err != nil {
+			return nil, cobra.ShellCompDirectiveDefault
+		}
+		envs, err := utils.GetConfigProperty(project, "environments")
+		if err != nil {
+			return nil, cobra.ShellCompDirectiveDefault
+		}
+
+		validEnvs := []cobra.Completion{}
+		validEnvs = append(validEnvs, strings.Split(envs, ",")...)
+		return validEnvs, cobra.ShellCompDirectiveDefault
+	})
+
+	getCmd.RegisterFlagCompletionFunc("get-all", func(cmd *cobra.Command, args []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	})
 }

@@ -23,9 +23,9 @@ var deleteCmd = &cobra.Command{
 	Use: "delete [flags] -p <project-name> -e <project-environment> (<name> |--file <file>)",
 	Example: `env-manager-v2 delete -p collection-back-end-v2.1 -e dev -t envs foo bar
 env-manager-v2 delete -p gollection-elastic -e homolog -t secrets -f /path/to/file`,
-	Short: "Delete a environment variable or secret",
-	Long: `Delete a environment variable or secret from the environment file in OCI Object Storage.
-The project and environment flags are required. You can delete multiple environment variables or secrets
+	Short: "Delete a environment variable or secret for a project",
+	Long: `Delete a environment variable or secret for a configured project. The project and
+	environment flags are required. You can delete multiple environment variables or secrets
 by passing multiple names in the command's arguments or using a file. If the file flag is used, the name
 flag is ignored. The file should be in INI format WITH keys and values, even though the values are not used.`,
 	Args: func(cmd *cobra.Command, args []string) error {
@@ -271,17 +271,52 @@ func DeleteFromFile(client objectstorage.ObjectStorageClient, namespace string, 
 func init() {
 	rootCmd.AddCommand(deleteCmd)
 
-	validTypesStr := strings.Join(utils.ValidTypes, ", ")
-	validProjectsStr := strings.Join(utils.ValidProjects, ", ")
-	validProjectEnvsStr := strings.Join(append(utils.ValidEnvs, "all"), ", ")
-
-	deleteCmd.Flags().StringP("type", "t", "envs", fmt.Sprintf("Specify the environment variable type (options: %s)", validTypesStr))
-	deleteCmd.Flags().StringP("project", "p", "", fmt.Sprintf("Specify the project name (options: %s)", validProjectsStr))
-	deleteCmd.Flags().StringP("environment", "e", "", fmt.Sprintf("Specify the project environment (options: %s)", validProjectEnvsStr))
+	deleteCmd.Flags().StringP("type", "t", "envs", "Specify the environment variable type")
+	deleteCmd.Flags().StringP("project", "p", "", "Specify the project name")
+	deleteCmd.Flags().StringP("environment", "e", "", "Specify the project environment")
 	deleteCmd.Flags().StringP("file", "f", "", "Specify a file containing a list of environment variables or secrets. The file should be in INI format.")
 	deleteCmd.Flags().Bool("quiet", false, "Don't ask for confirmation before deleting the environment variable or secret")
 	deleteCmd.Flags().BoolP("k8s", "k", false, "Delete the environment variable or secret from the Kubernetes cluster")
 
 	deleteCmd.MarkFlagRequired("project")
 	deleteCmd.MarkFlagRequired("environment")
+
+	deleteCmd.RegisterFlagCompletionFunc("project", func(cmd *cobra.Command, args []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {
+		projects := []cobra.Completion{}
+		projects = append(projects, utils.ValidProjects...)
+		return projects, cobra.ShellCompDirectiveDefault
+	})
+
+	deleteCmd.RegisterFlagCompletionFunc("type", func(cmd *cobra.Command, args []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {
+		types := []cobra.Completion{}
+		types = append(types, utils.ValidTypes...)
+		return types, cobra.ShellCompDirectiveDefault
+	})
+
+	deleteCmd.RegisterFlagCompletionFunc("environment", func(cmd *cobra.Command, args []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {
+		project, err := cmd.Flags().GetString("project")
+		if err != nil {
+			return nil, cobra.ShellCompDirectiveDefault
+		}
+		envs, err := utils.GetConfigProperty(project, "environments")
+		if err != nil {
+			return nil, cobra.ShellCompDirectiveDefault
+		}
+
+		validEnvs := []cobra.Completion{}
+		validEnvs = append(validEnvs, strings.Split(envs, ",")...)
+		return validEnvs, cobra.ShellCompDirectiveDefault
+	})
+
+	deleteCmd.RegisterFlagCompletionFunc("file", func(cmd *cobra.Command, args []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {
+		return nil, cobra.ShellCompDirectiveDefault
+	})
+
+	deleteCmd.RegisterFlagCompletionFunc("k8s", func(cmd *cobra.Command, args []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	})
+
+	deleteCmd.RegisterFlagCompletionFunc("quiet", func(cmd *cobra.Command, args []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	})
 }

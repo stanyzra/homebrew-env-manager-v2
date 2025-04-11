@@ -20,37 +20,16 @@ import (
 // updateCmd represents the update command
 var updateCmd = &cobra.Command{
 	Use:   "update [flags] -p <project-name> -e <project-environment> (-n <name> -v <value>|--file <file>)",
-	Short: "Update a environment variable or secret",
+	Short: "Update a environment variable or secret for a project",
 	Example: `env-manager-v2 update -p collection-back-end-v2.1 -e dev -t envs -n foo -v bar
 env-manager-v2 update -p gollection-elastic -e homolog -t secrets -n moo -v baz
 env-manager-v2 update -p collection-back-end-v2.1 -e dev -t envs -f /path/to/file`,
-	Long: `Update a environment variable or secret from the environment file in OCI Object Storage.
-The project and environment flags are required. You can update multiple environment variables or secrets
-using a file. If the file flag is used, the name and valueflags is ignored. The file should be
-in INI format WITH keys and values. If a environment variable or secret doesn't exists,
-it will not be created. Use the create command to create a new environment variable or secret.`,
-	Args: func(cmd *cobra.Command, args []string) error {
-		filePath, err := cmd.Flags().GetString("file")
-		if err != nil {
-			log.Fatalf("Error reading option flag: %v", err)
-		}
-
-		envName, err := cmd.Flags().GetString("name")
-		if err != nil {
-			log.Fatalf("Error reading option flag: %v", err)
-		}
-
-		envValue, err := cmd.Flags().GetString("value")
-		if err != nil {
-			log.Fatalf("Error reading option flag: %v", err)
-		}
-
-		if filePath == "" && (envName == "" || envValue == "") {
-			return fmt.Errorf("requires --name and --value flags unless --file is used")
-		}
-
-		return nil
-	},
+	Long: `Update a environment variable or secret for a configured project. The project and
+	environment flags are required. You can update multiple environment variables or secrets
+	using a file. If the file flag is used, the name and value flags are ignored. The file
+	should be in INI format WITH keys and values. If a environment variable or secret doesn't
+	exists, it will not be created. Use the create command to create a new environment variable
+	or secret.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		isK8s, err := cmd.Flags().GetBool("k8s")
 		if err != nil {
@@ -304,6 +283,55 @@ func init() {
 	updateCmd.Flags().StringP("file", "f", "", "Specify a file containing a list of environment variables or secrets. The file should be in INI format.")
 	updateCmd.Flags().BoolP("k8s", "k", false, "Update the environment variable or secret from the Kubernetes cluster")
 
+	updateCmd.MarkFlagsRequiredTogether("name", "value")
+	updateCmd.MarkFlagsMutuallyExclusive("file", "name")
+	updateCmd.MarkFlagsMutuallyExclusive("file", "value")
+	updateCmd.MarkFlagsOneRequired("file", "name")
+	updateCmd.MarkFlagsOneRequired("file", "value")
+
 	updateCmd.MarkFlagRequired("project")
 	updateCmd.MarkFlagRequired("environment")
+
+	updateCmd.RegisterFlagCompletionFunc("project", func(cmd *cobra.Command, args []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {
+		projects := []cobra.Completion{}
+		projects = append(projects, utils.ValidProjects...)
+		return projects, cobra.ShellCompDirectiveDefault
+	})
+
+	updateCmd.RegisterFlagCompletionFunc("type", func(cmd *cobra.Command, args []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {
+		types := []cobra.Completion{}
+		types = append(types, utils.ValidTypes...)
+		return types, cobra.ShellCompDirectiveDefault
+	})
+
+	updateCmd.RegisterFlagCompletionFunc("environment", func(cmd *cobra.Command, args []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {
+		project, err := cmd.Flags().GetString("project")
+		if err != nil {
+			return nil, cobra.ShellCompDirectiveDefault
+		}
+		envs, err := utils.GetConfigProperty(project, "environments")
+		if err != nil {
+			return nil, cobra.ShellCompDirectiveDefault
+		}
+
+		validEnvs := []cobra.Completion{}
+		validEnvs = append(validEnvs, strings.Split(envs, ",")...)
+		return validEnvs, cobra.ShellCompDirectiveDefault
+	})
+
+	updateCmd.RegisterFlagCompletionFunc("name", func(cmd *cobra.Command, args []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	})
+
+	updateCmd.RegisterFlagCompletionFunc("value", func(cmd *cobra.Command, args []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	})
+
+	updateCmd.RegisterFlagCompletionFunc("file", func(cmd *cobra.Command, args []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {
+		return nil, cobra.ShellCompDirectiveDefault
+	})
+
+	updateCmd.RegisterFlagCompletionFunc("k8s", func(cmd *cobra.Command, args []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	})
 }
