@@ -274,4 +274,8 @@ func init() {
 		validEnvs = append(validEnvs, strings.Split(envs, ",")...)
 		return validEnvs, cobra.ShellCompDirectiveDefault
 	})
+
+	getCmd.RegisterFlagCompletionFunc("get-all", func(cmd *cobra.Command, args []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	})
 }

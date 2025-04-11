@@ -28,28 +28,28 @@ env-manager-v2 create -p collection-back-end-v2.1 -e dev -t envs -f /path/to/fil
 	environment flags are required. If the file flag is used, the name and value flags are ignored.
 	If a environment variable or secret with the same name already exists, it will not be created.
 	Use the update command to update an existing environment variable or secret.`,
-	Args: func(cmd *cobra.Command, args []string) error {
-		filePath, err := cmd.Flags().GetString("file")
-		if err != nil {
-			log.Fatalf("Error reading option flag: %v", err)
-		}
+	// Args: func(cmd *cobra.Command, args []string) error {
+	// 	filePath, err := cmd.Flags().GetString("file")
+	// 	if err != nil {
+	// 		log.Fatalf("Error reading option flag: %v", err)
+	// 	}
 
-		envName, err := cmd.Flags().GetString("name")
-		if err != nil {
-			log.Fatalf("Error reading option flag: %v", err)
-		}
+	// 	envName, err := cmd.Flags().GetString("name")
+	// 	if err != nil {
+	// 		log.Fatalf("Error reading option flag: %v", err)
+	// 	}
 
-		envValue, err := cmd.Flags().GetString("value")
-		if err != nil {
-			log.Fatalf("Error reading option flag: %v", err)
-		}
+	// 	envValue, err := cmd.Flags().GetString("value")
+	// 	if err != nil {
+	// 		log.Fatalf("Error reading option flag: %v", err)
+	// 	}
 
-		if filePath == "" && (envName == "" || envValue == "") {
-			return fmt.Errorf("requires --name and --value flags unless --file is used")
-		}
+	// 	if filePath == "" && (envName == "" || envValue == "") {
+	// 		return fmt.Errorf("requires --name and --value flags unless --file is used")
+	// 	}
 
-		return nil
-	},
+	// 	return nil
+	// },
 	Run: func(cmd *cobra.Command, args []string) {
 		isK8s, err := cmd.Flags().GetBool("k8s")
 		if err != nil {
@@ -289,10 +289,16 @@ func init() {
 	createCmd.Flags().StringP("type", "t", "envs", "Specify the environment variable type")
 	createCmd.Flags().StringP("project", "p", "", "Specify the project name")
 	createCmd.Flags().StringP("environment", "e", "", "Specify the project environment")
-	createCmd.Flags().StringP("name", "n", "", "Specify the environment variable or secret name")
-	createCmd.Flags().StringP("value", "v", "", "Specify the environment variable or secret value")
-	createCmd.Flags().StringP("file", "f", "", "Specify a file containing a list of environment variables or secrets. The file should be in INI format.")
+	createCmd.Flags().StringP("name", "n", "", "Specify the environment variable or secret name (required if --file is not used)")
+	createCmd.Flags().StringP("value", "v", "", "Specify the environment variable or secret value (required if --file is not used)")
+	createCmd.Flags().StringP("file", "f", "", "Specify a file containing a list of environment variables or secrets. The file should be in INI format. (required if --name and --value are not used)")
 	createCmd.Flags().BoolP("k8s", "k", false, "Create the environment variable or secret in the Kubernetes cluster")
+
+	createCmd.MarkFlagsRequiredTogether("name", "value")
+	createCmd.MarkFlagsMutuallyExclusive("file", "name")
+	createCmd.MarkFlagsMutuallyExclusive("file", "value")
+	createCmd.MarkFlagsOneRequired("file", "name")
+	createCmd.MarkFlagsOneRequired("file", "value")
 
 	createCmd.MarkFlagRequired("project")
 	createCmd.MarkFlagRequired("environment")
@@ -339,4 +345,5 @@ func init() {
 	createCmd.RegisterFlagCompletionFunc("k8s", func(cmd *cobra.Command, args []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	})
+
 }

@@ -30,28 +30,6 @@ env-manager-v2 update -p collection-back-end-v2.1 -e dev -t envs -f /path/to/fil
 	should be in INI format WITH keys and values. If a environment variable or secret doesn't
 	exists, it will not be created. Use the create command to create a new environment variable
 	or secret.`,
-	Args: func(cmd *cobra.Command, args []string) error {
-		filePath, err := cmd.Flags().GetString("file")
-		if err != nil {
-			log.Fatalf("Error reading option flag: %v", err)
-		}
-
-		envName, err := cmd.Flags().GetString("name")
-		if err != nil {
-			log.Fatalf("Error reading option flag: %v", err)
-		}
-
-		envValue, err := cmd.Flags().GetString("value")
-		if err != nil {
-			log.Fatalf("Error reading option flag: %v", err)
-		}
-
-		if filePath == "" && (envName == "" || envValue == "") {
-			return fmt.Errorf("requires --name and --value flags unless --file is used")
-		}
-
-		return nil
-	},
 	Run: func(cmd *cobra.Command, args []string) {
 		isK8s, err := cmd.Flags().GetBool("k8s")
 		if err != nil {
@@ -304,6 +282,12 @@ func init() {
 	updateCmd.Flags().StringP("value", "v", "", "Specify the environment variable or secret value")
 	updateCmd.Flags().StringP("file", "f", "", "Specify a file containing a list of environment variables or secrets. The file should be in INI format.")
 	updateCmd.Flags().BoolP("k8s", "k", false, "Update the environment variable or secret from the Kubernetes cluster")
+
+	updateCmd.MarkFlagsRequiredTogether("name", "value")
+	updateCmd.MarkFlagsMutuallyExclusive("file", "name")
+	updateCmd.MarkFlagsMutuallyExclusive("file", "value")
+	updateCmd.MarkFlagsOneRequired("file", "name")
+	updateCmd.MarkFlagsOneRequired("file", "value")
 
 	updateCmd.MarkFlagRequired("project")
 	updateCmd.MarkFlagRequired("environment")
