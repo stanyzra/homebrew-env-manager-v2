@@ -29,7 +29,7 @@ To use the **Env Manager v2**, you need to configure your AWS, DigitalOcean (DGO
 
 The configuration file follows the **INI format** and is located at:
 ```
-~/.env-manager-v2/config
+~/.env-manager/config
 ```
 Each cloud provider must be configured in separate sections, as shown in the example below:
 
@@ -56,15 +56,16 @@ dgo_api_token = YOUR_DIGITALOCEAN_API_TOKEN
 Below is a detailed list of available configuration options.
 
 #### **[OCI] - Oracle Cloud Infrastructure**
-| Key         | Description                    |
-|-------------|--------------------------------|
-| region      | OCI region                     |
-| key_file    | Path to OCI SDK API key file   |
-| namespace   | OCI namespace                  |
-| user        | OCI user OCID                  |
-| fingerprint | OCI API key fingerprint        |
-| tenancy     | OCI tenancy OCID               |
-| bucket_name | OCI bucket name                |
+| Key            | Description                                    |
+|----------------|------------------------------------------------|
+| region         | OCI region                                     |
+| key_file       | Path to OCI SDK API key file                   |
+| namespace      | OCI namespace                                  |
+| user           | OCI user OCID                                  |
+| fingerprint    | OCI API key fingerprint                        |
+| tenancy        | OCI tenancy OCID                               |
+| bucket_name    | OCI bucket name                                |
+| compartment_id | OCI compartment ID where the bucket is located |
 
 #### **[AWS] - Amazon Web Services**
 | Key                   | Description            |
@@ -158,6 +159,7 @@ user = ocid1.user.oc1..example
 fingerprint = 12:34:56:78:90:ab:cd:ef
 tenancy = ocid1.tenancy.oc1..example
 bucket_name = my-oci-bucket
+compartment_id = my-compartment-id
 
 [DGO]
 dgo_api_token = my-digitalocean-token
