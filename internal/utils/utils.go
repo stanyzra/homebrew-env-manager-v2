@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -42,6 +43,18 @@ func StringInSlice(a string, list []string) bool {
 	return false
 }
 
+// IniToFlatMap converts an ini.File to a flap map of strings
+func IniToFlatMap(cfg *ini.File) map[string]string {
+	out := make(map[string]string)
+	for _, section := range cfg.Sections() {
+		for _, key := range section.Keys() {
+			fullKey := key.Name()
+			out[fullKey] = key.Value()
+		}
+	}
+	return out
+}
+
 // IniToString converts an ini.File to a string
 func IniToString(iniFile *ini.File) (string, error) {
 	var buffer bytes.Buffer
@@ -68,8 +81,55 @@ func IniToString(iniFile *ini.File) (string, error) {
 	return finalString, nil
 }
 
+func ObjectExists(err error) bool {
+	if err != nil {
+		if svcErr, ok := err.(common.ServiceError); ok {
+			if svcErr.GetHTTPStatusCode() == 404 {
+				fmt.Println("Não existe")
+				return false
+			}
+		}
+		return false
+	}
+
+	return true
+}
+
+func PrefixExists(client objectstorage.ObjectStorageClient, namespace, bucket, prefix string) bool {
+	req := objectstorage.ListObjectsRequest{
+		NamespaceName: &namespace,
+		BucketName:    &bucket,
+		Prefix:        &prefix,
+		Limit:         common.Int(1), // só precisa de 1 pra saber se existe algo
+	}
+
+	resp, err := client.ListObjects(context.Background(), req)
+	if err != nil {
+		return false
+	}
+
+	return len(resp.Objects) > 0
+}
+
 // GetEnvsFileAsIni reads an environment file from OCI Object Storage and returns it as an ini.File
 func GetEnvsFileAsIni(project string, fileName string, client objectstorage.ObjectStorageClient, namespace string, BucketName string) (*ini.File, error) {
+	objectName := fmt.Sprintf("%s/env-files/.%s", project, fileName)
+
+	exists := PrefixExists(client, namespace, BucketName, objectName)
+
+	if !exists {
+		putRequest := objectstorage.PutObjectRequest{
+			NamespaceName: &namespace,
+			BucketName:    common.String(BucketName),
+			ObjectName:    common.String(objectName),
+			ContentLength: common.Int64(0),
+			PutObjectBody: http.NoBody,
+		}
+
+		_, err := client.PutObject(context.Background(), putRequest)
+
+		helpers.FatalIfError(err)
+	}
 	// Get the object
 	getRequest := objectstorage.GetObjectRequest{
 		NamespaceName: &namespace,

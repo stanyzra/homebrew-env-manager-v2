@@ -5,16 +5,14 @@ Copyright © 2025 Stany Helberth stanyhelberth@gmail.com
 package cmd
 
 import (
-	"context"
 	"fmt"
-	"io"
 	"log"
+	"sort"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/amplify"
 	"github.com/digitalocean/godo"
 	"github.com/oracle/oci-go-sdk/example/helpers"
-	"github.com/oracle/oci-go-sdk/v49/common"
 	"github.com/oracle/oci-go-sdk/v49/objectstorage"
 	"github.com/spf13/cobra"
 	"github.com/stanyzra/env-manager-v2/internal/utils"
@@ -203,38 +201,40 @@ func HandleOCI(client objectstorage.ObjectStorageClient, namespace, project, pro
 	}
 }
 
-func ReadFullObject(client objectstorage.ObjectStorageClient, namespace string, project string, projEnvironment string, envType string) {
+func ReadFullObject(client objectstorage.ObjectStorageClient, namespace string, project string, projEnvironment string, envType string) error {
 	fileName := fmt.Sprintf("%s_%s", projEnvironment, envType)
 
-	getRequest := objectstorage.GetObjectRequest{
-		NamespaceName: &namespace,
-		BucketName:    common.String(utils.BucketName),
-		ObjectName:    common.String(fmt.Sprintf("%s/env-files/.%s", project, fileName)),
-	}
-
-	getResponse, err := client.GetObject(context.Background(), getRequest)
-	helpers.FatalIfError(err)
-
-	content, err := io.ReadAll(getResponse.Content)
+	envFile, err := utils.GetEnvsFileAsIni(project, fileName, client, namespace, utils.BucketName)
 	if err != nil {
-		fmt.Println("Error reading object content: ", err)
-		return
+		return fmt.Errorf("error reading envs: %w", err)
 	}
 
-	if envType == "envs" {
-		fmt.Println(string(content))
-	} else {
-		lines := strings.Split(string(content), "\n")
-		for i, line := range lines {
-			parts := strings.SplitN(line, "=", 2)
-			if len(parts) == 2 {
-				lines[i] = fmt.Sprintf("%s=***\n", parts[0])
-			}
+	flat := utils.IniToFlatMap(envFile)
+
+	if len(flat) == 0 {
+		fmt.Printf(
+			"No \"%s\" found in \"%s\" on \"%s\" environment\n",
+			envType, project, projEnvironment,
+		)
+		return nil
+	}
+
+	keys := make([]string, 0, len(flat))
+	for k := range flat {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	showValues := envType == "envs"
+
+	for _, k := range keys {
+		if showValues {
+			fmt.Printf("%s=%s\n", k, flat[k])
+		} else {
+			fmt.Printf("%s=***\n", k)
 		}
-
-		censoredContent := strings.Join(lines, "")
-		fmt.Println(censoredContent)
 	}
+	return nil
 }
 
 func init() {
